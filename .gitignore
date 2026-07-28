@@ -1,0 +1,14 @@
+*.vcd
+*.fst
+sim
+build/
+obj_dir/
+
+formal/*/
+*.ron
+
+*.json
+*.log
+
+.DS_Store
+.vscode/
