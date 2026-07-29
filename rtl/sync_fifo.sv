@@ -12,6 +12,10 @@ module sync_fifo #(
     output logic [WIDTH-1:0] rd_data,
     output logic full,
     output logic empty
+`ifdef FORMAL
+    ,
+    output logic [$clog2(DEPTH+1)-1:0] f_count
+`endif
 );
 
   localparam int AW = $clog2(DEPTH);  // address width: pointer = Aw+1 bits (extra wrap bit)
@@ -44,6 +48,12 @@ module sync_fifo #(
 
   assign full  = (wr_ptr[AW] != rd_ptr[AW]) && (wr_addr == rd_addr);
   assign empty = (wr_ptr == rd_ptr);
+
+`ifdef FORMAL
+
+  assign f_count = wr_ptr - rd_ptr;
+
+`endif
 
 endmodule
 

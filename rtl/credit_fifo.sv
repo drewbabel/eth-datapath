@@ -12,6 +12,10 @@ module credit_fifo #(
     output logic             dst_valid,
     output logic [WIDTH-1:0] dst_data,
     output logic             credit_return
+`ifdef FORMAL
+    ,
+    output logic [$clog2(DEPTH+1):0] f_occupancy
+`endif
 );
 
   logic             rd_en;
@@ -19,6 +23,9 @@ module credit_fifo #(
   logic             full;
   logic             empty;
   logic             out_valid;
+`ifdef FORMAL
+  logic [$clog2(DEPTH+1)-1:0] fifo_count;
+`endif
 
   sync_fifo #(
       .WIDTH(WIDTH),
@@ -32,6 +39,10 @@ module credit_fifo #(
       .rd_data(rd_data),
       .full(full),
       .empty(empty)
+`ifdef FORMAL
+      ,
+      .f_count(fifo_count)
+`endif
   );
 
   // Registered read to same cycle valid
@@ -46,6 +57,16 @@ module credit_fifo #(
   assign dst_valid = out_valid;
   assign dst_data = rd_data;
   assign credit_return = dst_valid && dst_ready;
+
+`ifdef FORMAL
+
+  localparam int OccW = $clog2(DEPTH + 1) + 1;
+
+  assign f_occupancy = OccW'(fifo_count) + OccW'(out_valid);
+
+  always @(posedge clk) if (rst_n) assert (!(rx_valid && full));
+
+`endif
 
 endmodule
 
