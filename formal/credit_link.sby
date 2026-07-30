@@ -1,0 +1,36 @@
+[tasks]
+prove
+lat_min
+lat_skew
+cover
+
+[options]
+prove: mode prove
+lat_min: mode prove
+lat_skew: mode prove
+cover: mode cover
+cover: depth 60
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+lat_min: smtbmc z3
+lat_min: abc pdr
+lat_skew: smtbmc z3
+lat_skew: abc pdr
+cover: smtbmc z3
+
+[script]
+read -formal sync_fifo.sv
+read -formal credit_sender.sv
+read -formal credit_fifo.sv
+read -formal credit_link.sv
+lat_min: chparam -set FWD_LAT 0 -set RET_LAT 0 credit_link
+lat_skew: chparam -set FWD_LAT 6 -set RET_LAT 3 credit_link
+prep -top credit_link
+
+[files]
+rtl/sync_fifo.sv
+rtl/credit_sender.sv
+rtl/credit_fifo.sv
+formal/credit_link.sv

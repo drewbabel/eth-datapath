@@ -67,7 +67,7 @@ module rr_arbiter_tb ();
     checks++;
     if (got !== exp) begin
       errors++;
-      $error("t=%0t %s mismatch: got=%b exp=%b", $time, name, got, exp);
+      $error("t=%0t %s mismatch: got=%0d exp=%0d", $time, name, got, exp);
     end
   endtask  // Automatic
 

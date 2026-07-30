@@ -26,7 +26,9 @@ wave:
 
 formal:
 	@test -n "$(MOD)" || { echo "usage: make formal MOD=<module>  (e.g. MOD=rr_arbiter)"; exit 1; }
-	sby -f $(FORMAL)
+	@tasks=$$(sby --dumptasks $(FORMAL)); \
+	if [ -z "$$tasks" ]; then sby -f $(FORMAL); \
+	else for t in $$tasks; do echo "== $(MOD): $$t =="; sby -f $(FORMAL) $$t || exit 1; done; fi
 
 view:
 	@test -n "$(MOD)" || { echo "usage: make view MOD=<module>"; exit 1; }
