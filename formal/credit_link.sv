@@ -1,10 +1,8 @@
 `default_nettype none
 
 module credit_link #(
-    parameter int WIDTH   = 8,
-    parameter int DEPTH   = 16,
-    parameter int FWD_LAT = 2,
-    parameter int RET_LAT = 2
+    parameter int WIDTH = 8,
+    parameter int DEPTH = 16
 ) (
     input  logic             clk,
     input  logic             rst_n,
@@ -19,13 +17,8 @@ module credit_link #(
   logic                       tx_valid;
   logic [          WIDTH-1:0] tx_data;
   logic                       rx_valid;
-  logic [          WIDTH-1:0] rx_data;
   logic                       credit_drain;
   logic                       credit_return;
-
-  logic [          FWD_LAT:0] fwd_valid;
-  logic [          RET_LAT:0] ret_credit;
-  logic [          WIDTH-1:0] fwd_data      [FWD_LAT+1];
 
   logic [$clog2(DEPTH+1)-1:0] f_credits;
   logic [  $clog2(DEPTH+1):0] f_occupancy;
@@ -64,6 +57,13 @@ module credit_link #(
 
   localparam int CntW = $clog2(DEPTH + 1) + 2;  // Headroom prevents wrap
 
+  logic [CntW-1:0] fwd_inflight;
+  logic [CntW-1:0] ret_inflight;
+
+  (* anyseq *) logic fwd_deliver;
+  (* anyseq *) logic ret_deliver;
+  (* anyseq *) logic [WIDTH-1:0] rx_data;
+
   logic [CntW-1:0] cnt_credits;
   logic [CntW-1:0] cnt_bytes;
   logic [CntW-1:0] cnt_beats;
@@ -72,8 +72,6 @@ module credit_link #(
 
   assign cnt_credits = CntW'(f_credits);
   assign cnt_bytes   = CntW'(f_occupancy);
-  assign cnt_beats   = CntW'($countones(fwd_valid));
-  assign cnt_returns = CntW'($countones(ret_credit));
   assign cnt_total   = cnt_credits + cnt_bytes + cnt_beats + cnt_returns;
 
   always @(posedge clk) if (rst_n) assert (cnt_total == ($bits(cnt_total))'(DEPTH));
@@ -81,36 +79,38 @@ module credit_link #(
   always @(posedge clk) begin
     if (rst_n) begin
       cover (cnt_credits == 0);
-      cover (cnt_bytes == DEPTH);
+      cover (cnt_bytes == ($bits(cnt_bytes))'(DEPTH));
       cover (dst_valid && dst_ready);
-      cover (fwd_valid[FWD_LAT] && ret_credit[RET_LAT]);
     end
   end
 
-  always_ff @(posedge clk) begin
+  // Fwd Pipe
+  always @(posedge clk) begin
     if (!rst_n) begin
-      fwd_valid  <= '0;
-      ret_credit <= '0;
-      for (int i = 0; i <= FWD_LAT; i++) fwd_data[i] <= '0;
+      fwd_inflight <= 0;
     end else begin
-      fwd_valid[0]  <= tx_valid;
-      fwd_data[0]   <= tx_data;
-      ret_credit[0] <= credit_drain;
-
-      // Shift registers
-      for (int i = 1; i <= FWD_LAT; i++) begin
-        fwd_valid[i] <= fwd_valid[i-1];
-        fwd_data[i]  <= fwd_data[i-1];
-      end
-      for (int i = 1; i <= RET_LAT; i++) begin
-        ret_credit[i] <= ret_credit[i-1];
-      end
+      if (tx_valid) begin
+        if (!rx_valid) fwd_inflight <= fwd_inflight + 1;
+      end else if (rx_valid) fwd_inflight <= fwd_inflight - 1;
     end
   end
 
-  assign rx_valid = fwd_valid[FWD_LAT];
-  assign rx_data = fwd_data[FWD_LAT];
-  assign credit_return = ret_credit[RET_LAT];
+  // Return Pipe
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      ret_inflight <= 0;
+    end else begin
+      if (credit_drain) begin
+        if (!credit_return) ret_inflight <= ret_inflight + 1;
+      end else if (credit_return) ret_inflight <= ret_inflight - 1;
+    end
+  end
+
+  assign cnt_beats = CntW'(fwd_inflight);
+  assign rx_valid = fwd_deliver && !(fwd_inflight == 0);
+
+  assign cnt_returns = CntW'(ret_inflight);
+  assign credit_return = ret_deliver && !(ret_inflight == 0);
 
 endmodule
 
