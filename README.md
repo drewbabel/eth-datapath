@@ -17,7 +17,7 @@ Flow control and arbitration blocks for an Ethernet datapath in SystemVerilog, v
 | `rr_arbiter` | Reference-model testbench + SymbiYosys bounded-wait fairness proof |
 | `sync_fifo` | Reference-model testbench |
 
-A credit sits in exactly one of four places, unspent in the sender, in flight forward, occupying a receive slot, or in flight back, and the four counts always sum to `DEPTH`. Receive-FIFO overflow follows from that sum and is unreachable from the receiver alone, which is why the proof instantiates both endpoints and a model of the wire between them.
+A credit sits in exactly one of four places, unspent in the sender, in flight forward, occupying a receive slot, or in flight back, and the four counts always sum to `DEPTH`. Receive-FIFO overflow follows from that sum and is unreachable from the receiver alone, which is why the proof instantiates both endpoints together with a model of the wire between them. The wire model neither drops nor duplicates a beat and is otherwise free to deliver on any schedule, so one proof covers every link latency.
 
 ## Implementation
 
@@ -35,10 +35,12 @@ Synthesized for Xilinx 7-series through sv2v and Yosys, at the default `WIDTH` o
 ## Building and running
 
 ```
-make MOD=credit_fifo            # run a module's testbench
-make wave MOD=credit_fifo       # run the testbench and open the waveform in Surfer
-make formal MOD=credit_link     # run every SymbiYosys task in the credit link proof
-./synth_stats.sh credit_fifo    # report a module's synthesis cost
+make MOD=credit_fifo               # run a module's testbench
+make wave MOD=credit_fifo          # run the testbench and open the waveform in Surfer
+make formal MOD=credit_link        # run every SymbiYosys task in the credit link proof
+make trace MOD=credit_link         # print a formal counterexample as text
+make view-formal MOD=credit_link   # open a formal waveform in Surfer
+./synth_stats.sh credit_fifo       # report a module's synthesis cost
 ```
 
 ### Tool versions
