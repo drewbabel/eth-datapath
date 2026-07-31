@@ -1,0 +1,20 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+cover: depth 30
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+cover: smtbmc z3
+
+[script]
+read -formal axis_skid.sv
+prep -top axis_skid
+
+[files]
+rtl/axis_skid.sv
