@@ -1,20 +1,40 @@
 [tasks]
 prove
 cover
+prove_w64
+cover_w64
+prove_a6
+cover_a6
 
 [options]
 prove: mode prove
+prove_w64: mode prove
+prove_a6: mode prove
 cover: mode cover
 cover: depth 40
+cover_w64: mode cover
+cover_w64: depth 40
+cover_a6: mode cover
+cover_a6: depth 40
 
 [engines]
 prove: smtbmc z3
 prove: abc pdr
+prove_w64: smtbmc z3
+prove_w64: abc pdr
+prove_a6: smtbmc z3
+prove_a6: abc pdr
 cover: smtbmc z3
+cover_w64: smtbmc z3
+cover_a6: smtbmc z3
 
 [script]
 read -formal axil_csr.sv
 read -formal faxil_slave.v
+prove_w64: chparam -set ADDR_WIDTH 5 -set DATA_WIDTH 64 axil_csr
+cover_w64: chparam -set ADDR_WIDTH 5 -set DATA_WIDTH 64 axil_csr
+prove_a6: chparam -set ADDR_WIDTH 6 -set DATA_WIDTH 32 axil_csr
+cover_a6: chparam -set ADDR_WIDTH 6 -set DATA_WIDTH 32 axil_csr
 prep -top axil_csr
 
 [files]

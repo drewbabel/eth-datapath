@@ -32,9 +32,9 @@ module axil_csr #(
     output logic [             1:0] s_axi_rresp
 );
 
-  localparam int NumRegs = 4;
   localparam int Lsb = $clog2(DATA_WIDTH / 8);  // Byte lane bits
   localparam int IdxWidth = ADDR_WIDTH - Lsb;
+  localparam int NumRegs = 2 ** IdxWidth;
 
   logic [DATA_WIDTH-1:0] regs     [NumRegs];
 
