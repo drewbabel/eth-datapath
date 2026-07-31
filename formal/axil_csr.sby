@@ -1,0 +1,22 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+cover: depth 40
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+cover: smtbmc z3
+
+[script]
+read -formal axil_csr.sv
+read -formal faxil_slave.v
+prep -top axil_csr
+
+[files]
+formal/faxil_slave.v
+rtl/axil_csr.sv
