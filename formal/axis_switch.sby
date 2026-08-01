@@ -1,0 +1,24 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+cover: depth 40
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+cover: smtbmc z3
+
+[script]
+read -sv rr_arbiter.sv
+read -sv axis_skid.sv
+read -formal axis_switch.sv
+prep -top axis_switch
+
+[files]
+rtl/rr_arbiter.sv
+rtl/axis_skid.sv
+rtl/axis_switch.sv
