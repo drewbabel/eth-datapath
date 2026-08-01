@@ -35,7 +35,7 @@ module axis_switch_tb ();
   int sent = 0;
   int rcvd = 0;
 
-  // Per flow expected beats, one ring per source destination pair
+  // Per flow rings
   logic [Width-1:0] q_data[NIn][NOut][QDepth];
   logic q_last[NIn][NOut][QDepth];
   int q_head[NIn][NOut];
@@ -140,7 +140,7 @@ module axis_switch_tb ();
     repeat (cycles) @(posedge clk);
   endtask  // Automatic
 
-  // Sources hold the offered beat until the switch takes it
+  // Hold until taken
   for (genvar j = 0; j < NIn; j++) begin : g_src
     always @(posedge clk) begin
       if (!rst_n) begin
@@ -160,7 +160,7 @@ module axis_switch_tb ();
             seq[j]      = seq[j] + 1;
             beat[j]     = s_tlast[j] ? 0 : beat[j] + 1;
           end else begin
-            // Payload is don't care while tvalid is low
+            // Idle payload garbage
             s_tvalid[j] = 1'b0;
             s_tdata[j]  = (Width)'($urandom);
             s_tlast[j]  = 1'($urandom);
@@ -179,7 +179,7 @@ module axis_switch_tb ();
     end
   end
 
-  // Enqueue every accepted beat on its own flow
+  // Enqueue per flow
   always @(posedge clk) begin
     int d;
     for (int j = 0; j < NIn; j++) begin
@@ -199,11 +199,11 @@ module axis_switch_tb ();
     $dumpvars(0, axis_switch_tb);
     do_reset();
 
-    // Both sources free running to random outputs
+    // Free running
     send_en = 1'b1;
     idle(100);
 
-    // Both sources contend for one output
+    // Forced contention
     same_dest_en = 1'b1;
     idle(200);
 
@@ -211,11 +211,11 @@ module axis_switch_tb ();
     stall_en = 1'b1;
     idle(300);
 
-    // Random destinations and irregular sinks
+    // Random destinations
     same_dest_en = 1'b0;
     idle(400);
 
-    // Gaps from the sources as well
+    // Source gaps
     gap_en = 1'b1;
     idle(400);
 
@@ -298,7 +298,7 @@ module axis_switch_tb ();
     end
   end
 
-  // A non granted input must not be starved of its own payload
+  // Input holds valid
   always @(negedge clk) begin
     for (int j = 0; j < NIn; j++) begin
       if (rst_n && s_tvalid[j] && !s_tready[j]) begin
