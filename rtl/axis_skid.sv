@@ -62,16 +62,16 @@ module axis_skid #(
   always @(posedge clk) begin
     if (f_past_valid && $past(rst_n) && rst_n) begin
       cover (skid_valid);  // Slot occupied
-      cover ($past(s_xfer && out_free) && m_tvalid);  // Beat bypasses the slot
-      cover ($past(skid_valid) && !skid_valid && m_tvalid && m_tready);  // Slot drains on resume
-      cover (m_tvalid && m_tready && $past(m_tvalid && m_tready));  // Back to back transfers
+      cover ($past(s_xfer && out_free) && m_tvalid);  // Beat bypasses slot
+      cover ($past(skid_valid) && !skid_valid && m_tvalid && m_tready);  // Slot drains
+      cover (m_tvalid && m_tready && $past(m_tvalid && m_tready));  // Back to back
       cover (m_tvalid && m_tready && m_tlast);  // tlast transfers out
     end
   end
 
   initial assume (!rst_n);
 
-  // Log skid buffer contents
+  // Log skid contents
   always @(posedge clk) begin
     if (!rst_n) begin
       slave_xfer <= 0;
@@ -86,7 +86,7 @@ module axis_skid #(
     end
   end
 
-  // Check skid buffer contents
+  // Check skid contents
   always @(posedge clk) begin
     if (!rst_n) begin
       master_xfer <= 0;
@@ -101,24 +101,24 @@ module axis_skid #(
     end
   end
 
-  // Master contract on slave port
+  // Slave port contract
   always @(posedge clk) begin
     if (!rst_n) assume (!s_tvalid);
-    if (f_past_valid && !$past(rst_n)) assume (!s_tvalid);
-    if (f_past_valid && $past(rst_n) && rst_n) begin
-      if ($past(s_tvalid && !s_tready)) assume (s_tvalid);
-      if ($past(s_tvalid) && $past(!s_tready)) begin
+    if (f_past_valid) begin
+      if (!$past(rst_n)) assume (!s_tvalid);
+      if ($past(rst_n) && rst_n && $past(s_tvalid && !s_tready)) begin
+        assume (s_tvalid);
         assume (s_tdata == $past(s_tdata));
         assume (s_tlast == $past(s_tlast));
       end
     end
   end
 
-  // Slave contract on master port
+  // Master port contract
   always @(posedge clk) begin
-    if (f_past_valid && !$past(rst_n)) assert (!m_tvalid);
-    if (f_past_valid && $past(rst_n) && rst_n) begin
-      if ($past(m_tvalid) && $past(!m_tready)) begin
+    if (f_past_valid) begin
+      if (!$past(rst_n)) assert (!m_tvalid);
+      if ($past(rst_n) && rst_n && $past(m_tvalid && !m_tready)) begin
         assert (m_tvalid);
         assert (m_tdata == $past(m_tdata));
         assert (m_tlast == $past(m_tlast));
