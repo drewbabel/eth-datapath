@@ -61,3 +61,11 @@ make view-formal MOD=credit_link   # open a formal waveform in Surfer
 ### Tool versions
 
 Verified with Icarus Verilog 13.0, Yosys 0.66, SymbiYosys 0.66 driving z3 4.16.0 and yices, and Verible for lint.
+
+## Vendored code
+
+Everything under `rtl/`, `tb/` and `formal/` is written here.
+
+`lib/eth/` is Alex Forencich's [verilog-ethernet](https://github.com/alexforencich/verilog-ethernet) under the MIT license, pinned at commit `77320a9`, which supplies the gigabit MAC and the RGMII interface to the board's PHY. Upstream is deprecated in favor of [taxi](https://github.com/fpganinja/taxi) and receives no further changes. Its license and authorship are preserved in `lib/eth/COPYING` and `lib/eth/AUTHORS`.
+
+`formal/faxil_slave.v` is Dan Gisselquist's AXI4-Lite property set from the WB2AXIP project, under the Apache License 2.0.
