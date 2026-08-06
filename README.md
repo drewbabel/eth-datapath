@@ -61,3 +61,7 @@ make view-formal MOD=credit_link   # open a formal waveform in Surfer
 ### Tool versions
 
 Verified with Icarus Verilog 13.0, Yosys 0.66, SymbiYosys 0.66 driving z3 4.16.0 and yices, and Verible for lint.
+
+## Vendored code
+
+Everything under `rtl/`, `tb/` and `formal/` is written here. `lib/eth/` is Alex Forencich's [verilog-ethernet](https://github.com/alexforencich/verilog-ethernet) under the MIT license, vendored as a squashed git subtree so a clone builds with no extra steps, and refreshed with `lib/update-eth.sh`. It supplies the gigabit MAC and the RGMII interface to the board's PHY. Its license and authorship are preserved in `lib/eth/COPYING` and `lib/eth/AUTHORS`.
