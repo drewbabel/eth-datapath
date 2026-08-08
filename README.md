@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/drewbabel/eth-datapath/actions/workflows/ci.yml/badge.svg)](https://github.com/drewbabel/eth-datapath/actions/workflows/ci.yml)
 
-Switching, flow control, arbitration, and control-plane blocks for an Ethernet datapath in SystemVerilog, verified with reference-model testbenches and SymbiYosys proofs, with:
+Switching, flow control, arbitration, and control-plane blocks for an Ethernet datapath in SystemVerilog, verified with self-checking testbenches and SymbiYosys proofs, with:
 
 - A 2x2 AXI-Stream switch that routes each packet on its `tdest` field and arbitrates per packet, so beats from two sources never interleave on one output.
 - An AXI-Stream skid buffer that breaks the combinational path in both directions and still accepts a beat every cycle.
@@ -16,12 +16,12 @@ Switching, flow control, arbitration, and control-plane blocks for an Ethernet d
 
 | Module | Method |
 |--------|--------|
-| `axis_switch` | Reference-model testbench + two-engine SymbiYosys prove and cover of routing, packet integrity, symbolic beat delivery, and bounded wait |
-| `axis_skid` | Reference-model testbench + two-engine SymbiYosys prove and cover of AXI-Stream compliance and symbolic beat delivery |
-| `credit_sender` + `credit_fifo` | Reference-model testbenches + two-engine SymbiYosys prove and cover |
-| `rr_arbiter` | Reference-model testbench + SymbiYosys bounded-wait fairness proof |
-| `axil_csr` | Reference-model testbench + SymbiYosys prove and cover against ZipCPU `faxil_slave` |
-| `sync_fifo` | Reference-model testbench |
+| `axis_switch` | Self-checking testbench + two-engine SymbiYosys prove and cover of routing, packet integrity, symbolic packet tracking, and bounded wait |
+| `axis_skid` | Self-checking testbench + two-engine SymbiYosys prove and cover of AXI-Stream compliance and symbolic packet tracking |
+| `credit_sender` + `credit_fifo` | Self-checking testbenches + two-engine SymbiYosys prove and cover |
+| `rr_arbiter` | Self-checking testbench + SymbiYosys bounded-wait fairness proof |
+| `axil_csr` | Self-checking testbench + SymbiYosys prove and cover against ZipCPU `faxil_slave` |
+| `sync_fifo` | Self-checking testbench |
 
 A credit sits in exactly one of four places, unspent in the sender, in flight forward, occupying a receive slot, or in flight back, and the four counts always sum to `DEPTH`. Receive-FIFO overflow follows from that sum and is unreachable from the receiver alone, which is why the proof instantiates both endpoints together with a model of the wire between them. The wire model neither drops nor duplicates a beat and is otherwise free to deliver on any schedule, so one proof covers every link latency.
 
