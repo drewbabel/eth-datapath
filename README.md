@@ -16,7 +16,7 @@ Switching, flow control, arbitration, and control-plane blocks for an Ethernet d
 
 | Module | Method |
 |--------|--------|
-| `axis_switch` | Reference-model testbench + two-engine SymbiYosys prove and cover of routing, packet atomicity, symbolic beat delivery, and bounded wait |
+| `axis_switch` | Reference-model testbench + two-engine SymbiYosys prove and cover of routing, packet integrity, symbolic beat delivery, and bounded wait |
 | `axis_skid` | Reference-model testbench + two-engine SymbiYosys prove and cover of AXI-Stream compliance and symbolic beat delivery |
 | `credit_sender` + `credit_fifo` | Reference-model testbenches + two-engine SymbiYosys prove and cover |
 | `rr_arbiter` | Reference-model testbench + SymbiYosys bounded-wait fairness proof |
