@@ -35,11 +35,11 @@ Utilization comes from AMD Vivado 2026.1 out-of-context synthesis for the Xilinx
 
 | Module | LUTs | Flip-flops | Distributed RAM (bits) |
 |--------|------|------------|------------------------|
-| `credit_fifo` \* | 19 | 19 | 320 |
 | `credit_sender` | 9 | 5 | 0 |
-| `sync_fifo` | 18 | 18 | 320 |
-| `axil_csr` | 19 | 37 | 1024 |
 | `axis_skid` | 14 | 20 | 0 |
+| `sync_fifo` | 18 | 18 | 320 |
+| `credit_fifo` \* | 19 | 19 | 320 |
+| `axil_csr` | 19 | 37 | 1024 |
 | `rr_arbiter` | 29 | 9 | 0 |
 | `axis_switch` \** | 67 | 50 | 0 |
 
