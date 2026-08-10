@@ -31,21 +31,23 @@ Bus compliance on the register block is judged by a third-party property set, Gi
 
 ## Implementation
 
-Synthesized for Xilinx 7-series through sv2v and Yosys, at each module's default parameters.
+Utilization comes from AMD Vivado 2026.1 out-of-context synthesis for the Xilinx Artix-7 XC7A35T, at each module's default parameters.
 
 | Module | LUTs | Flip-flops | Distributed RAM (bits) |
 |--------|------|------------|------------------------|
-| `credit_fifo` \* | 7 | 19 | 512 |
-| `credit_sender` | 8 | 5 | 0 |
-| `sync_fifo` | 8 | 18 | 512 |
-| `axil_csr` | 10 | 37 | 2048 |
-| `axis_skid` | 13 | 20 | 0 |
-| `rr_arbiter` | 20 | 9 | 0 |
-| `axis_switch` \** | 66 | 50 | 0 |
+| `credit_fifo` \* | 19 | 19 | 320 |
+| `credit_sender` | 9 | 5 | 0 |
+| `sync_fifo` | 18 | 18 | 320 |
+| `axil_csr` | 19 | 37 | 1024 |
+| `axis_skid` | 14 | 20 | 0 |
+| `rr_arbiter` | 29 | 9 | 0 |
+| `axis_switch` \** | 67 | 50 | 0 |
 
 \* Includes its `sync_fifo` instance, which holds all the distributed RAM and 18 of the 19 flip-flops.
 
 \** Includes one `rr_arbiter` and one `axis_skid` per output.
+
+`vivado/util.tcl` synthesizes each module out of context for that same part and reproduces the counts above.
 
 ## Building and running
 
