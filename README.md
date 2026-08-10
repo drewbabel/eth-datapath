@@ -31,7 +31,7 @@ Bus compliance on the register block is judged by a third-party property set, Gi
 
 ## Implementation
 
-Utilization comes from AMD Vivado 2026.1 out-of-context synthesis for the Xilinx Artix-7 XC7A35T, at each module's default parameters.
+Utilization comes from AMD Vivado 2026.1 out-of-context synthesis for the Xilinx Artix-7 XC7A35T at each module's default parameters, reproducible with `vivado/util.tcl`.
 
 | Module | LUTs | Flip-flops | Distributed RAM (bits) |
 |--------|------|------------|------------------------|
@@ -46,8 +46,6 @@ Utilization comes from AMD Vivado 2026.1 out-of-context synthesis for the Xilinx
 \* Includes its `sync_fifo` instance, which holds all the distributed RAM and 18 of the 19 flip-flops.
 
 \** Includes one `rr_arbiter` and one `axis_skid` per output.
-
-`vivado/util.tcl` synthesizes each module out of context for that same part and reproduces the counts above.
 
 ## Building and running
 
