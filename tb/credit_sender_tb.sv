@@ -50,9 +50,9 @@ module credit_sender_tb ();
   task automatic do_verdict();
     @(posedge clk);
     if (errors == 0) begin
-      $display("PASSED: %0d checks", checks);
+      $display("PASS: %0d checks, %0d mismatches", checks, errors);
     end else begin
-      $display("FAILED: %0d checks, %0d errors", checks, errors);
+      $fatal(1, "FAIL: %0d mismatches, %0d checks", errors, checks);
     end
     $finish;
   endtask  // Automatic
