@@ -4,6 +4,9 @@ module sync_fifo #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 16
 ) (
+`ifdef FORMAL
+    output logic [$clog2(DEPTH+1)-1:0] f_count,
+`endif
     input logic clk,
     input logic rst_n,
     input logic wr_en,
@@ -12,10 +15,6 @@ module sync_fifo #(
     output logic [WIDTH-1:0] rd_data,
     output logic full,
     output logic empty
-`ifdef FORMAL
-    ,
-    output logic [$clog2(DEPTH+1)-1:0] f_count
-`endif
 );
 
   localparam int AW = $clog2(DEPTH);  // address width: pointer = Aw+1 bits (extra wrap bit)
