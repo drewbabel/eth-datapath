@@ -4,6 +4,9 @@ module credit_sender #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 16
 ) (
+`ifdef FORMAL
+    output logic [$clog2(DEPTH+1)-1:0] f_credits,
+`endif
     input  logic             clk,
     input  logic             rst_n,
     input  logic             src_valid,
@@ -12,10 +15,6 @@ module credit_sender #(
     output logic             tx_valid,
     output logic [WIDTH-1:0] tx_data,
     input  logic             credit_return
-`ifdef FORMAL
-    ,
-    output logic [$clog2(DEPTH+1)-1:0] f_credits
-`endif
 );
 
   localparam int CW = $clog2(DEPTH + 1);  // Credit width

@@ -4,6 +4,9 @@ module credit_fifo #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 16
 ) (
+`ifdef FORMAL
+    output logic [$clog2(DEPTH+1):0] f_occupancy,
+`endif
     input  logic             clk,
     input  logic             rst_n,
     input  logic             rx_valid,
@@ -12,10 +15,6 @@ module credit_fifo #(
     output logic             dst_valid,
     output logic [WIDTH-1:0] dst_data,
     output logic             credit_return
-`ifdef FORMAL
-    ,
-    output logic [$clog2(DEPTH+1):0] f_occupancy
-`endif
 );
 
   logic             rd_en;
@@ -31,6 +30,9 @@ module credit_fifo #(
       .WIDTH(WIDTH),
       .DEPTH(DEPTH)
   ) u_fifo (
+`ifdef FORMAL
+      .f_count(fifo_count),
+`endif
       .clk(clk),
       .rst_n(rst_n),
       .wr_en(rx_valid),
@@ -39,10 +41,6 @@ module credit_fifo #(
       .rd_data(rd_data),
       .full(full),
       .empty(empty)
-`ifdef FORMAL
-      ,
-      .f_count(fifo_count)
-`endif
   );
 
   // Registered read to same cycle valid
