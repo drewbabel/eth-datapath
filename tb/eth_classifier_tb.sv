@@ -373,7 +373,7 @@ module eth_classifier_tb ();
       if (t1_en) begin
         if (s_tvalid && s_tready && in_idx == 5) hdr_cyc = cyc;
         if (m_tvalid && m_tready && hdr_cyc >= 0) begin
-          check_le("first output beat after the sixth byte", cyc - hdr_cyc, 4);
+          check_le("first output beat after the sixth byte", cyc - hdr_cyc, 2);
           hdr_cyc = -1;
         end
       end
