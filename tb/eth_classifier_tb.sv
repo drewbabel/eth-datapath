@@ -23,7 +23,7 @@ module eth_classifier_tb ();
   logic [7:0] m_tdata;
   logic m_tlast;
   logic [DestW-1:0] m_tdest;
-  logic [31:0] drop_count;
+  logic [31:0] drop_cnt;
 
   logic gap_en = 1'b0;
   logic stall_en = 1'b0;
@@ -70,7 +70,7 @@ module eth_classifier_tb ();
       .m_tdata(m_tdata),
       .m_tlast(m_tlast),
       .m_tdest(m_tdest),
-      .drop_count(drop_count)
+      .drop_cnt(drop_cnt)
   );
 
   task automatic check_bit(input string name, input logic got, input logic exp);
@@ -139,7 +139,7 @@ module eth_classifier_tb ();
     #1;
     check_bit("m_tvalid low in reset", m_tvalid, 1'b0);
     check_bit("s_tready low in reset", s_tready, 1'b0);
-    check_int("drop_count zero in reset", int'(drop_count), 0);
+    check_int("drop_cnt zero in reset", int'(drop_cnt), 0);
     rst_n = 1'b1;
     @(posedge clk);
   endtask  // Automatic
@@ -197,7 +197,8 @@ module eth_classifier_tb ();
 
   task automatic drain();
     int guard = 0;
-    while ((tx_data_q.size() > 0 || exp_data_q.size() > 0 || m_tvalid) && guard < 40000) begin
+    while ((tx_data_q.size() > 0 || exp_data_q.size() > 0 || m_tvalid
+            || int'(drop_cnt) != exp_drops) && guard < 40000) begin
       @(posedge clk);
       guard++;
     end
@@ -241,12 +242,6 @@ module eth_classifier_tb ();
     else if (m_tvalid && m_tready) out_open <= !m_tlast;
   end
 
-  // Frame byte index
-  always @(negedge clk) begin
-    if (!rst_n) in_idx = 0;
-    else if (s_tvalid && s_tready) in_idx = s_tlast ? 0 : in_idx + 1;
-  end
-
   initial begin
     $dumpfile("tb.vcd");
     $dumpvars(0, eth_classifier_tb);
@@ -260,7 +255,7 @@ module eth_classifier_tb ();
     send_frame(Mac1, 1);
     drain();
     check_int("frames drained after directed", exp_data_q.size(), 0);
-    check_int("drop count after directed", int'(drop_count), exp_drops);
+    check_int("drop count after directed", int'(drop_cnt), exp_drops);
 
     // Back to back
     for (int i = 0; i < 8; i++) send_frame(i[0] ? Mac1 : Mac0, 60);
@@ -289,7 +284,7 @@ module eth_classifier_tb ();
     t2_en = 1'b0;
 
     // Random under stress
-    gap_en   = 1'b1;
+    gap_en = 1'b1;
     stall_en = 1'b1;
     for (int i = 0; i < 200; i++) begin
       int len;
@@ -308,7 +303,7 @@ module eth_classifier_tb ();
     stall_en = 1'b0;
     drain();
     check_int("frames drained after random", exp_data_q.size(), 0);
-    check_int("drop count after random", int'(drop_count), exp_drops);
+    check_int("drop count after random", int'(drop_cnt), exp_drops);
     check_int("beats out", rcvd, exp_beats);
 
     // Mid frame reset
@@ -318,7 +313,7 @@ module eth_classifier_tb ();
     send_frame(Mac0, 60);
     drain();
     check_int("frames drained after reset", exp_data_q.size(), 0);
-    check_int("drop count after reset", int'(drop_count), exp_drops);
+    check_int("drop count after reset", int'(drop_cnt), exp_drops);
     check_int("beats out after reset", rcvd, exp_beats);
 
     do_verdict();
@@ -373,12 +368,16 @@ module eth_classifier_tb ();
 
   // Decision latency
   always @(negedge clk) begin
-    if (rst_n && t1_en) begin
-      if (s_tvalid && s_tready && in_idx == 5) hdr_cyc = cyc;
-      if (m_tvalid && m_tready && hdr_cyc >= 0) begin
-        check_le("first output beat after the sixth byte", cyc - hdr_cyc, 4);
-        hdr_cyc = -1;
+    if (!rst_n) in_idx = 0;
+    else begin
+      if (t1_en) begin
+        if (s_tvalid && s_tready && in_idx == 5) hdr_cyc = cyc;
+        if (m_tvalid && m_tready && hdr_cyc >= 0) begin
+          check_le("first output beat after the sixth byte", cyc - hdr_cyc, 4);
+          hdr_cyc = -1;
+        end
       end
+      if (s_tvalid && s_tready) in_idx = s_tlast ? 0 : in_idx + 1;
     end
   end
 
