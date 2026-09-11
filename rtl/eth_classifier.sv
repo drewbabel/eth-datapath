@@ -64,6 +64,11 @@ module eth_classifier #(
   logic                                 pushed_now;
   logic                                 meta_live;
   logic                                 meta_rd_q;
+  logic                                 verdict_free;
+  logic                                 bypass;
+  logic                                 bypass_hit;
+  logic [                   DEST_W-1:0] bypass_dest;
+  logic                                 from_bypass;
 
   // Data buffer
   logic [                    FillW-1:0] fill;
@@ -125,9 +130,11 @@ module eth_classifier #(
   // Metadata queue
   assign meta_wr_en   = !pushed_now && (hdr_last || frame_end_in);  // Once per frame
   assign meta_wr_data = {hdr_last && hit, hit_dest};  // Runt never hits
-  assign meta_rd_en   = !meta_empty && out_free && (!meta_live || last_out);
-  assign meta_hit     = meta_rd_data[DEST_W];
-  assign meta_dest    = meta_rd_data[DEST_W-1:0];
+  assign verdict_free = out_free && (!meta_live || last_out);
+  assign meta_rd_en   = !meta_empty && verdict_free;
+  assign bypass       = meta_empty && verdict_free && meta_wr_en;  // Skips queue
+  assign meta_hit     = from_bypass ? bypass_hit : meta_rd_data[DEST_W];
+  assign meta_dest    = from_bypass ? bypass_dest : meta_rd_data[DEST_W-1:0];
   assign m_tdest      = meta_dest;
 
   sync_fifo #(
@@ -136,7 +143,7 @@ module eth_classifier #(
   ) u_meta (
       .clk(clk),
       .rst_n(rst_n),
-      .wr_en(meta_wr_en),
+      .wr_en(meta_wr_en && !bypass),
       .rd_en(meta_rd_en),
       .wr_data(meta_wr_data),
       .rd_data(meta_rd_data),
@@ -146,17 +153,25 @@ module eth_classifier #(
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin
-      pushed    <= 1'b0;
-      meta_live <= 1'b0;
-      meta_rd_q <= 1'b0;
+      pushed      <= 1'b0;
+      meta_live   <= 1'b0;
+      meta_rd_q   <= 1'b0;
+      from_bypass <= 1'b0;
     end else begin
       if (sof) pushed <= 1'b0;
       if (meta_wr_en) pushed <= 1'b1;
 
-      meta_rd_q <= meta_rd_en;
+      meta_rd_q <= meta_rd_en || bypass;
+
+      if (bypass) begin
+        bypass_hit  <= meta_wr_data[DEST_W];
+        bypass_dest <= meta_wr_data[DEST_W-1:0];
+        from_bypass <= 1'b1;
+      end
+      if (meta_rd_en) from_bypass <= 1'b0;
 
       if (send_end || drain_end) meta_live <= 1'b0;
-      if (meta_rd_en) meta_live <= 1'b1;  // Pop wins tie
+      if (meta_rd_en || bypass) meta_live <= 1'b1;  // Pop wins tie
     end
   end
 
