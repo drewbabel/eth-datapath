@@ -7,6 +7,8 @@
 #   make clean                  		    delete build artifacts (build/, *.vcd)
 
 RTL := $(wildcard rtl/*.sv)
+# Vendored library search
+LIB := -y lib/eth/rtl -Y .v
 TB  := tb/$(MOD)_tb.sv
 SIM := build/sim
 WAVE_STATE := tb/$(MOD).ron
@@ -15,13 +17,13 @@ FORMAL := formal/$(MOD).sby
 run:
 	@test -n "$(MOD)" || { echo "usage: make MOD=<module>  (e.g. MOD=rr_arbiter)"; exit 1; }
 	@mkdir -p build
-	iverilog -g2012 -s $(MOD)_tb -o $(SIM) $(RTL) $(TB)
+	iverilog -g2012 $(LIB) -s $(MOD)_tb -o $(SIM) $(RTL) $(TB)
 	vvp $(SIM)
 
 wave:
 	@test -n "$(MOD)" || { echo "usage: make wave MOD=<module>"; exit 1; }
 	@mkdir -p build
-	iverilog -g2012 -s $(MOD)_tb -o $(SIM) $(RTL) $(TB)
+	iverilog -g2012 $(LIB) -s $(MOD)_tb -o $(SIM) $(RTL) $(TB)
 	-vvp $(SIM)
 	surfer $$(ls *.vcd 2>/dev/null | head -1) $$(test -f $(WAVE_STATE) && echo "-s $(WAVE_STATE)") &
 
