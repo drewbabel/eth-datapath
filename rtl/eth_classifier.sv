@@ -83,6 +83,11 @@ module eth_classifier #(
   logic                                 send_end;
   logic                                 drain_end;
 
+`ifdef FORMAL
+  logic [$clog2(MetaDepth+1)-1:0] f_meta_count;
+  logic [ $clog2(BufDepth+1)-1:0] f_data_count;
+`endif
+
   assign s_xfer       = s_tvalid && s_tready;
   assign m_xfer       = m_tvalid && m_tready;
   assign out_free     = !m_tvalid || m_tready;
@@ -141,6 +146,9 @@ module eth_classifier #(
       .WIDTH(DEST_W + 1),
       .DEPTH(MetaDepth)
   ) u_meta (
+`ifdef FORMAL
+      .f_count(f_meta_count),
+`endif
       .clk(clk),
       .rst_n(rst_n),
       .wr_en(meta_wr_en && !bypass),
@@ -184,6 +192,9 @@ module eth_classifier #(
       .WIDTH($bits(s_tdata) + $bits(s_tlast)),
       .DEPTH(BufDepth)
   ) u_data (
+`ifdef FORMAL
+      .f_count(f_data_count),
+`endif
       .clk(clk),
       .rst_n(rst_n),
       .wr_en(s_xfer),
@@ -230,6 +241,96 @@ module eth_classifier #(
       if (meta_rd_q && !meta_hit) drop_cnt <= drop_cnt + 1;  // Miss entry popped
     end
   end
+
+`ifdef FORMAL
+
+  logic f_past_valid = 1'b0;
+
+  always_ff @(posedge clk) f_past_valid <= 1'b1;
+
+  initial assume (!rst_n);
+
+  // IHI 0051B transmitter
+  always @(posedge clk) begin
+    if (!rst_n) assume (!s_tvalid);
+    if (f_past_valid) begin
+      if (!$past(rst_n)) assume (!s_tvalid);
+      if ($past(rst_n) && rst_n && $past(s_tvalid && !s_tready)) begin
+        assume (s_tvalid);
+        assume (s_tdata == $past(s_tdata));
+        assume (s_tlast == $past(s_tlast));
+      end
+    end
+  end
+
+  always @(posedge clk) begin
+    if (rst_n) begin
+      cover (s_xfer);
+      cover (m_xfer);
+
+      cover (m_xfer && m_tlast);  // Full completed frame
+
+      cover ($past(drop_cnt) + 1 == drop_cnt);
+
+      cover (meta_wr_en && hdr_last && !hit);  // Miss decided
+      cover (meta_wr_en && !hdr_last);  // Runt decided
+      cover (drain_end);  // Drop drained
+
+      cover (full && s_tvalid && !s_tready);  // Buffer full
+      cover (data_empty && m_tready && !m_tvalid);  // Buffer starved
+
+      cover (meta_empty && !data_empty);  // Decision pending
+
+      if (f_past_valid) begin
+        cover (sof && $past(frame_end_in));  // Back to back
+        cover (send_end && f_rst_after_xfer);  // Reset recovery
+      end
+    end
+  end
+
+  logic f_seen_xfer = 1'b0;
+  logic f_rst_after_xfer = 1'b0;
+
+  always_ff @(posedge clk) begin
+    if (s_xfer) f_seen_xfer <= 1'b1;
+    if (!rst_n && f_seen_xfer) f_rst_after_xfer <= 1'b1;
+  end
+
+  logic [31:0] f_drains;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n) f_drains <= '0;
+    else if (drain_end) f_drains <= f_drains + 1;
+  end
+
+  always_ff @(posedge clk) begin
+    if (f_past_valid) begin
+      if ($past(!rst_n)) begin
+        assert (!m_tvalid);
+        assert (!s_tready);
+        assert (drop_cnt == '0);
+      end else begin
+        // Miss emits nothing
+        if (meta_live && !meta_hit) assert (!m_tvalid);
+
+        // Count tracks discards
+        assert (drop_cnt == f_drains || drop_cnt == f_drains + 1);
+
+        // If not accepted, info stays offered
+        if ($past(m_tvalid) && $past(!m_tready)) begin
+          assert (m_tvalid);
+          assert (m_tdest == $past(m_tdest));
+          assert (m_tdata == $past(m_tdata));
+          assert (m_tlast == $past(m_tlast));
+        end
+
+        // Bytes from same packet have same destination
+        if ($past(!m_tlast) && $past(m_xfer)) assert (m_tdest == $past(m_tdest));
+      end
+    end
+  end
+
+`endif
 
 endmodule
 

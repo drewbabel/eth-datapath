@@ -1,0 +1,36 @@
+[tasks]
+prove
+cover
+prove_d2
+cover_d2
+
+[options]
+prove: mode prove
+prove_d2: mode prove
+cover: mode cover
+cover: depth 40
+cover_d2: mode cover
+cover_d2: depth 40
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+prove_d2: smtbmc z3
+prove_d2: abc pdr
+cover: smtbmc z3
+cover: smtbmc yices
+cover_d2: smtbmc z3
+cover_d2: smtbmc yices
+
+[script]
+read -formal sync_fifo.sv
+read -formal eth_classifier.sv
+prove: chparam -set N_ENTRIES 2 -set DEST_W 1 -set MATCH_MAC 96'hdeadbeef0002deadbeef0001 -set MATCH_DEST 2'b10 eth_classifier
+cover: chparam -set N_ENTRIES 2 -set DEST_W 1 -set MATCH_MAC 96'hdeadbeef0002deadbeef0001 -set MATCH_DEST 2'b10 eth_classifier
+prove_d2: chparam -set N_ENTRIES 3 -set DEST_W 2 -set MATCH_MAC 144'hdeadbeef0003deadbeef0002deadbeef0001 -set MATCH_DEST 6'b11_10_01 eth_classifier
+cover_d2: chparam -set N_ENTRIES 3 -set DEST_W 2 -set MATCH_MAC 144'hdeadbeef0003deadbeef0002deadbeef0001 -set MATCH_DEST 6'b11_10_01 eth_classifier
+prep -top eth_classifier
+
+[files]
+rtl/sync_fifo.sv
+rtl/eth_classifier.sv
