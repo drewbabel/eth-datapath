@@ -2,7 +2,8 @@
 
 module axil_csr #(
     parameter int ADDR_WIDTH = 4,
-    parameter int DATA_WIDTH = 32
+    parameter int DATA_WIDTH = 32,
+    localparam int NumStatus = 2 ** (ADDR_WIDTH - $clog2(DATA_WIDTH / 8) - 1)
 ) (
     input  logic                    clk,
     input  logic                    rst_n,
@@ -29,14 +30,17 @@ module axil_csr #(
     output logic                    s_axi_rvalid = 1'b0,
     input  logic                    s_axi_rready,
     output logic [  DATA_WIDTH-1:0] s_axi_rdata,
-    output logic [             1:0] s_axi_rresp
+    output logic [             1:0] s_axi_rresp,
+    // Upper half reads
+    input  logic [   NumStatus-1:0][DATA_WIDTH-1:0] status
 );
 
   localparam int Lsb = $clog2(DATA_WIDTH / 8);  // Byte lane bits
   localparam int IdxWidth = ADDR_WIDTH - Lsb;
   localparam int NumRegs = 2 ** IdxWidth;
+  localparam int NumRw = NumRegs / 2;  // Lower half writable
 
-  logic [DATA_WIDTH-1:0] regs     [NumRegs];
+  logic [DATA_WIDTH-1:0] regs     [NumRw];
 
   logic [  IdxWidth-1:0] wr_index;
   logic [  IdxWidth-1:0] rd_index;
@@ -81,12 +85,15 @@ module axil_csr #(
   end
 
   always_ff @(posedge clk) begin
-    if (wr_xfer) begin
+    if (wr_xfer && !wr_index[IdxWidth-1]) begin
       for (int i = 0; i < $bits(s_axi_wstrb); i++) begin
-        if (s_axi_wstrb[i]) regs[wr_index][(i*8)+:8] <= s_axi_wdata[(i*8)+:8];
+        if (s_axi_wstrb[i]) regs[wr_index[IdxWidth-2:0]][(i*8)+:8] <= s_axi_wdata[(i*8)+:8];
       end
     end
-    if (rd_xfer) s_axi_rdata <= regs[rd_index];
+    if (rd_xfer) begin
+      if (rd_index[IdxWidth-1]) s_axi_rdata <= status[rd_index[IdxWidth-2:0]];
+      else s_axi_rdata <= regs[rd_index[IdxWidth-2:0]];
+    end
   end
 
 `ifdef FORMAL
@@ -120,6 +127,7 @@ module axil_csr #(
       cover (wr_done && rd_done);  // Same cycle
       if (f_past_valid) begin
         cover (s_axi_rvalid && $past(rd_xfer) && $past(rd_index) == f_index);  // Tracked read
+        cover (s_axi_rvalid && $past(rd_xfer) && $past(rd_index[IdxWidth-1]));  // Status read
       end
     end
   end
@@ -136,12 +144,23 @@ module axil_csr #(
     end
   end
 
-  initial assume (f_shadow == regs[f_index]);
+  initial assume (!f_index[IdxWidth-1]);
+  initial assume (f_shadow == regs[f_index[IdxWidth-2:0]]);
 
   always @(posedge clk) begin
-    assert (f_shadow == regs[f_index]);
+    assert (f_shadow == regs[f_index[IdxWidth-2:0]]);
     if (f_past_valid && s_axi_rvalid && $past(rd_xfer) && $past(rd_index) == f_index) begin
       assert (s_axi_rdata == $past(f_shadow));
+    end
+  end
+
+  // Status reads
+  logic [DATA_WIDTH-1:0] f_status;
+  always_ff @(posedge clk) f_status <= status[rd_index[IdxWidth-2:0]];
+
+  always @(posedge clk) begin
+    if (f_past_valid && s_axi_rvalid && $past(rd_xfer) && $past(rd_index[IdxWidth-1])) begin
+      assert (s_axi_rdata == f_status);
     end
   end
 

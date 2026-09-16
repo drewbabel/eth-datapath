@@ -9,6 +9,7 @@ module axil_csr_tb ();
   localparam int DataWidth = 32;
   localparam int StrbWidth = DataWidth / 8;
   localparam int NumRegs = 4;
+  localparam int NumRw = NumRegs / 2;
   localparam int Lsb = 2;
 
   logic clk = 1'b0;
@@ -32,6 +33,7 @@ module axil_csr_tb ();
   logic s_axi_rready = 1'b0;
   logic [DataWidth-1:0] s_axi_rdata;
   logic [1:0] s_axi_rresp;
+  logic [NumRw-1:0][DataWidth-1:0] status = {32'hC0DE_0001, 32'hC0DE_0000};
 
   logic [DataWidth-1:0] ref_regs[NumRegs];
   int stall = 0;
@@ -62,7 +64,8 @@ module axil_csr_tb ();
       .s_axi_rvalid(s_axi_rvalid),
       .s_axi_rready(s_axi_rready),
       .s_axi_rdata(s_axi_rdata),
-      .s_axi_rresp(s_axi_rresp)
+      .s_axi_rresp(s_axi_rresp),
+      .status(status)
   );
 
   task automatic do_reset();
@@ -97,6 +100,11 @@ module axil_csr_tb ();
     end
   endtask  // Automatic
 
+  // Status upper half
+  function automatic logic [DataWidth-1:0] expected(input int index);
+    return (index < NumRw) ? ref_regs[index] : status[index-NumRw];
+  endfunction
+
   task automatic check_resp(input string name, input logic [1:0] got);
     checks++;
     if (got !== 2'b00) begin
@@ -123,7 +131,7 @@ module axil_csr_tb ();
     s_axi_wvalid = 1'b0;
 
     for (int i = 0; i < StrbWidth; i++) begin
-      if (strb[i]) ref_regs[index][(i*8)+:8] = data[(i*8)+:8];
+      if (strb[i] && index < NumRw) ref_regs[index][(i*8)+:8] = data[(i*8)+:8];
     end
 
     idle(stall);
@@ -151,13 +159,13 @@ module axil_csr_tb ();
   task automatic read_check(input int index);
     logic [DataWidth-1:0] got;
     axi_read(index, got);
-    check_data($sformatf("reg%0d", index), got, ref_regs[index]);
+    check_data($sformatf("reg%0d", index), got, expected(index));
   endtask  // Automatic
 
   // Read during write
   task automatic read_during_write(input int index);
     logic [DataWidth-1:0] prev;
-    prev = ref_regs[index];
+    prev = expected(index);
     #1;
     s_axi_araddr  = (AddrWidth)'(index << Lsb);
     s_axi_arvalid = 1'b1;
@@ -221,8 +229,9 @@ module axil_csr_tb ();
       stall = pass;
       repeat (200) begin
         index = $urandom % NumRegs;
-        data  = (DataWidth)'($urandom);
-        strb  = (StrbWidth)'($urandom);
+        data = (DataWidth)'($urandom);
+        strb = (StrbWidth)'($urandom);
+        status[$urandom%NumRw] = (DataWidth)'($urandom);
         axi_write(index, data, strb);
         read_check(index);
       end
