@@ -1,6 +1,6 @@
 `default_nettype none
 
-module eth_rx_shim_tb ();
+module rx_shim_tb ();
 
   int checks = 0;
   int errors = 0;
@@ -42,7 +42,7 @@ module eth_rx_shim_tb ();
 
   always #5 clk = ~clk;
 
-  eth_rx_shim #(
+  rx_shim #(
       .N_ENTRIES(NEntries),
       .DEST_W(DestW),
       .MATCH_MAC(MatchMac),
@@ -79,7 +79,7 @@ module eth_rx_shim_tb ();
   logic v_full_seen = 1'b0;
   logic v_absent_seen = 1'b0;
 
-  eth_rx_shim #(
+  rx_shim #(
       .N_ENTRIES(NEntries),
       .DEST_W(DestW),
       .MATCH_MAC(MatchMac),
@@ -204,7 +204,7 @@ module eth_rx_shim_tb ();
 
   initial begin
     $dumpfile("tb.vcd");
-    $dumpvars(0, eth_rx_shim_tb);
+    $dumpvars(0, rx_shim_tb);
 
     repeat (4) @(posedge clk);
     rst_n = 1'b1;
@@ -315,9 +315,9 @@ module eth_rx_shim_tb ();
       $display("FAIL verdict absent at an output tlast");
     end
 
-    if (errors == 0) $display("PASS eth_rx_shim_tb: %0d checks", checks);
+    if (errors == 0) $display("PASS rx_shim_tb: %0d checks", checks);
     else begin
-      $display("FAIL eth_rx_shim_tb: %0d errors of %0d checks", errors, checks);
+      $display("FAIL rx_shim_tb: %0d errors of %0d checks", errors, checks);
       $fatal(1);
     end
     $finish;
