@@ -1,6 +1,6 @@
 `default_nettype none
 
-module eth_classifier #(
+module classifier #(
     parameter int N_ENTRIES = 2,
     parameter int DEST_W = 1,
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = '0,

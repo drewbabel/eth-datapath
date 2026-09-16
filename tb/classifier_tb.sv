@@ -1,6 +1,6 @@
 `default_nettype none
 
-module eth_classifier_tb ();
+module classifier_tb ();
 
   int checks = 0;
   int errors = 0;
@@ -53,7 +53,7 @@ module eth_classifier_tb ();
 
   always #5 clk = ~clk;
 
-  eth_classifier #(
+  classifier #(
       .N_ENTRIES(NEntries),
       .DEST_W(DestW),
       .MATCH_MAC(MatchMac),
@@ -244,7 +244,7 @@ module eth_classifier_tb ();
 
   initial begin
     $dumpfile("tb.vcd");
-    $dumpvars(0, eth_classifier_tb);
+    $dumpvars(0, classifier_tb);
     do_reset();
 
     // Directed frames

@@ -1,6 +1,6 @@
 `default_nettype none
 
-module eth_tx_shim_tb ();
+module tx_shim_tb ();
 
   int checks = 0;
   int errors = 0;
@@ -27,7 +27,7 @@ module eth_tx_shim_tb ();
 
   always #5 clk = ~clk;
 
-  eth_tx_shim dut (
+  tx_shim dut (
       .s_tvalid(s_tvalid),
       .s_tready(s_tready),
       .s_tdata(s_tdata),
@@ -103,7 +103,7 @@ module eth_tx_shim_tb ();
 
   initial begin
     $dumpfile("tb.vcd");
-    $dumpvars(0, eth_tx_shim_tb);
+    $dumpvars(0, tx_shim_tb);
 
     tx_axis_tready = 1'b1;
     repeat (2) @(posedge clk);
@@ -129,9 +129,9 @@ module eth_tx_shim_tb ();
 
     repeat (4) @(posedge clk);
 
-    if (errors == 0) $display("PASS eth_tx_shim_tb: %0d checks", checks);
+    if (errors == 0) $display("PASS tx_shim_tb: %0d checks", checks);
     else begin
-      $display("FAIL eth_tx_shim_tb: %0d errors of %0d checks", errors, checks);
+      $display("FAIL tx_shim_tb: %0d errors of %0d checks", errors, checks);
       $fatal(1);
     end
     $finish;

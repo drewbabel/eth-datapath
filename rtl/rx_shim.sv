@@ -1,6 +1,6 @@
 `default_nettype none
 
-module eth_rx_shim #(
+module rx_shim #(
     parameter int N_ENTRIES = 2,
     parameter int DEST_W = 1,
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = '0,
@@ -110,7 +110,7 @@ module eth_rx_shim #(
   assign {c_s_tuser, c_s_tlast, c_s_tdata} = buf_rd_data;
   assign c_s_xfer = c_s_tvalid && c_s_tready;
 
-  eth_classifier #(
+  classifier #(
       .N_ENTRIES(N_ENTRIES),
       .DEST_W(DEST_W),
       .MATCH_MAC(MATCH_MAC),

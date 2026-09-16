@@ -1,6 +1,6 @@
 `default_nettype none
 
-module eth_tx_shim (
+module tx_shim (
     // Switch master
     input  logic       s_tvalid,
     output logic       s_tready,
