@@ -127,6 +127,7 @@ module axil_csr #(
       cover (wr_done && rd_done);  // Same cycle
       if (f_past_valid) begin
         cover (s_axi_rvalid && $past(rd_xfer) && $past(rd_index) == f_index);  // Tracked read
+        cover (s_axi_rvalid && $past(rd_xfer) && $past(rd_index[IdxWidth-1]));  // Status read
       end
     end
   end
@@ -143,12 +144,23 @@ module axil_csr #(
     end
   end
 
-  initial assume (f_shadow == regs[f_index]);
+  initial assume (!f_index[IdxWidth-1]);
+  initial assume (f_shadow == regs[f_index[IdxWidth-2:0]]);
 
   always @(posedge clk) begin
-    assert (f_shadow == regs[f_index]);
+    assert (f_shadow == regs[f_index[IdxWidth-2:0]]);
     if (f_past_valid && s_axi_rvalid && $past(rd_xfer) && $past(rd_index) == f_index) begin
       assert (s_axi_rdata == $past(f_shadow));
+    end
+  end
+
+  // Status reads
+  logic [DATA_WIDTH-1:0] f_status;
+  always_ff @(posedge clk) f_status <= status[rd_index[IdxWidth-2:0]];
+
+  always @(posedge clk) begin
+    if (f_past_valid && s_axi_rvalid && $past(rd_xfer) && $past(rd_index[IdxWidth-1])) begin
+      assert (s_axi_rdata == f_status);
     end
   end
 
