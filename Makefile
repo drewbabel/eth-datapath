@@ -4,11 +4,15 @@
 #   make formal MOD=rr_arbiter  		    run every SymbiYosys task in formal/$(MOD).sby (FAIL exits nonzero)
 #   make trace MOD=rr_arbiter    		    print a formal counterexample as text
 #   make view-formal MOD=rr_arbiter 	    open a formal waveform in surfer
+#   make elaborate              		    check the board top resolves before a cloud build
 #   make clean                  		    delete build artifacts (build/, *.vcd)
 
 RTL := $(wildcard rtl/*.sv)
 # Vendored library search
-LIB := -y lib/eth/rtl -y lib/eth/lib/axis/rtl -Y .v
+LIB := -y lib/eth/rtl -y lib/eth/lib/axis/rtl -y lib/uart/rtl -Y .v -Y .sv
+VENDORED_ETH  := iddr oddr ssio_ddr_in ssio_ddr_out rgmii_phy_if eth_mac_1g_rgmii_fifo \
+       eth_mac_1g_rgmii eth_mac_1g axis_gmii_rx axis_gmii_tx lfsr
+VENDORED_AXIS := axis_fifo axis_async_fifo axis_async_fifo_adapter sync_reset
 TB  := $(firstword $(wildcard tb/$(MOD)_tb.sv lib/*/tb/$(MOD)_tb.sv))
 SIM := build/sim
 WAVE_STATE := tb/$(MOD).ron
@@ -69,8 +73,23 @@ view-formal:
 	echo "surfer $$vcd"; \
 	surfer $$vcd $$(test -f $$dir.ron && echo "-s $$dir.ron") &
 
+
+elaborate:
+	@t=$$(mktemp -d); mkdir -p $$t/src; \
+	for f in rtl/*.sv lib/uart/rtl/*.sv boards/nexys_video/board_top.sv; do \
+	  sed -e 's/parameter string /parameter /' -e '/default_nettype/d' "$$f" > $$t/src/$$(basename $$f); \
+	done; \
+	{ echo "read_verilog -lib -specify +/xilinx/cells_sim.v"; \
+	  echo "read_verilog -lib +/xilinx/cells_xtra.v"; \
+	  for f in $(VENDORED_ETH); do echo "read_verilog lib/eth/rtl/$$f.v"; done; \
+	  for f in $(VENDORED_AXIS); do echo "read_verilog lib/eth/lib/axis/rtl/$$f.v"; done; \
+	  echo "read_verilog -sv $$t/src/*.sv"; \
+	  echo "hierarchy -top board_top -check"; } > $$t/check.ys; \
+	yosys -q -s $$t/check.ys 2>&1 | grep -E "^ERROR" && exit 1; \
+	echo "ELABORATE OK"
+
 clean:
 	rm -rf build *.vcd sim_build results.xml
 
 .DEFAULT_GOAL := run
-.PHONY: run wave view formal trace view-formal clean
+.PHONY: run wave view formal trace view-formal elaborate clean
