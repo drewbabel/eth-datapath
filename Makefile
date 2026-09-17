@@ -9,7 +9,7 @@
 RTL := $(wildcard rtl/*.sv)
 # Vendored library search
 LIB := -y lib/eth/rtl -y lib/eth/lib/axis/rtl -Y .v
-TB  := tb/$(MOD)_tb.sv
+TB  := $(firstword $(wildcard tb/$(MOD)_tb.sv lib/*/tb/$(MOD)_tb.sv))
 SIM := build/sim
 WAVE_STATE := tb/$(MOD).ron
 FORMAL := formal/$(MOD).sby
