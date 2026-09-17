@@ -60,6 +60,7 @@ module datapath_top #(
   logic [NPorts-1:0][DestW-1:0] sw_s_tdest;
 
   // Switch egress
+  logic [NPorts-1:0] drop_evt;
   logic [NPorts-1:0] mon_rx_dv;
   logic [NPorts-1:0] mon_tx_en;
 
@@ -170,7 +171,8 @@ module datapath_top #(
         .m_tlast(sw_s_tlast[i]),
         .m_tdest(sw_s_tdest[i]),
         .overflow_cnt(overflow_cnt[i]),
-        .drop_cnt(drop_cnt[i])
+        .drop_cnt(drop_cnt[i]),
+        .drop_evt(drop_evt[i])
     );
 
     // Last rides data
@@ -251,6 +253,7 @@ module datapath_top #(
       .rst_n(rst_n),
       .rx_ctl(mon_rx_dv[0]),
       .tx_ctl(mon_tx_en[0]),
+      .discard(drop_evt[0]),
       .clear(control_w[0][0]),
       .snapshot(control_w[0][1]),
       .stat_min(probe_min),
