@@ -10,6 +10,9 @@ module latency_probe #(
     input logic rx_ctl,
     input logic tx_ctl,
 
+    // Cancels one stamp
+    input logic discard,
+
     // Host commands
     input logic clear,
     input logic snapshot,
@@ -81,6 +84,17 @@ module latency_probe #(
   assign push = rx_start;
   assign pop = tx_done && !fifo_empty;
 
+  logic [7:0] pending;
+  logic       drop_pop;
+
+  assign drop_pop = (pending != 8'd0) && !pop && !fifo_empty;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n || clear_pulse) pending <= 8'd0;
+    else if (discard && !drop_pop) pending <= pending + 8'd1;
+    else if (!discard && drop_pop) pending <= pending - 8'd1;
+  end
+
   sync_fifo #(
       .WIDTH(32),
       .DEPTH(DEPTH)
@@ -88,7 +102,7 @@ module latency_probe #(
       .clk(clk),
       .rst_n(fifo_rst_n),
       .wr_en(push),
-      .rd_en(pop),
+      .rd_en(pop || drop_pop),
       .wr_data(now),
       .rd_data(fifo_out),
       .full(fifo_full),
