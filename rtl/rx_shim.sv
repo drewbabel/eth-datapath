@@ -23,7 +23,8 @@ module rx_shim #(
     output logic [DEST_W-1:0] m_tdest,
     // Status
     output logic [      31:0] overflow_cnt,
-    output logic [      31:0] drop_cnt
+    output logic [      31:0] drop_cnt,
+    output logic              drop_evt
 );
 
   localparam int BAw = $clog2(BUF_DEPTH);
@@ -180,6 +181,7 @@ module rx_shim #(
   assign m_tlast    = c_m_tlast;
   assign m_tdest    = c_m_tdest;
   assign drop_cnt   = c_drop_cnt;
+  assign drop_evt   = drop_pulse;
 
   always_ff @(posedge clk) begin
     if (!rst_n) overflow_cnt <= '0;
