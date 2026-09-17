@@ -105,6 +105,17 @@ def open_capture(lib, iface):
     return handle
 
 
+def link_bytes(iface):
+    import subprocess
+
+    out = subprocess.check_output(["netstat", "-I", iface, "-b"]).decode()
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 10 and parts[0] == iface:
+            return int(parts[9])
+    return 0
+
+
 def host_mac(iface):
     import subprocess
 
@@ -217,9 +228,10 @@ def relative_stdev(values):
     return 100.0 * statistics.stdev(values) / mean
 
 
-def one_trial(lib, handle, rx, src, port, size, count, settle):
+def one_trial(lib, handle, rx, src, port, iface, size, count, settle):
     probe_command(port, CMD_CLEAR)
     dropped = read_register(port, COUNTER_ADDRS[1])
+    out_bytes = link_bytes(iface)
     got, push, span, wire, failed = run_throughput(lib, handle, rx, src, count, size, settle)
     probe_command(port, CMD_SNAPSHOT)
     stats = probe_read(port)
@@ -229,6 +241,7 @@ def one_trial(lib, handle, rx, src, port, size, count, settle):
     stats["push_s"] = push
     stats["wire_mbps"] = wire
     stats["failed"] = failed
+    stats["onwire"] = (link_bytes(iface) - out_bytes) // (size + 4)
     return stats
 
 
@@ -236,10 +249,11 @@ def print_table(rows):
     print("")
     print("latency at the pins, first bit in to last bit out, 8 ns resolution")
     print("")
-    print("  bytes  paired   min us   avg us   max us   rsd %  return Mb/s  unpaired  overflow  stray  unsent")
+    print("  bytes  onwire  paired   min us   avg us   max us   rsd %  return Mb/s  unpaired  overflow  stray")
     for r in rows:
-        print("  %5d  %6d  %7.3f  %7.3f  %7.3f  %6.2f  %11s  %8d  %8d  %5d  %6d" % (
+        print("  %5d  %6d  %6d  %7.3f  %7.3f  %7.3f  %6.2f  %11s  %8d  %8d  %5d" % (
             r["size"],
+            r["onwire"],
             r["count"],
             r["min_ns"] / 1000.0,
             r["avg_ns"] / 1000.0,
@@ -249,7 +263,6 @@ def print_table(rows):
             r["unpaired"],
             r["overflow"],
             r["stray"],
-            r["failed"],
         ))
 
 
@@ -287,7 +300,7 @@ def main():
         before = [read_register(port, a) for a in COUNTER_ADDRS]
         for size in sizes:
             trials = [
-                one_trial(lib, handle, rx, src, port, size, args.count, args.settle)
+                one_trial(lib, handle, rx, src, port, args.iface, size, args.count, args.settle)
                 for _ in range(args.iterations)
             ]
             best = trials[-1]
@@ -302,6 +315,7 @@ def main():
                 "unpaired": sum(t["unpaired"] for t in trials),
                 "stray": sum(t["stray"] for t in trials),
                 "failed": sum(t["failed"] for t in trials),
+                "onwire": sum(t["onwire"] for t in trials),
                 "overflow": sum(t["overflow"] for t in trials),
             })
         after = [read_register(port, a) for a in COUNTER_ADDRS]
