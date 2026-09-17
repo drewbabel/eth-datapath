@@ -161,7 +161,7 @@ module board_top (
 
   logic        awvalid;
   logic        awready;
-  logic [ 4:0] awaddr;
+  logic [ 6:0] awaddr;
   logic [ 2:0] awprot;
   logic        wvalid;
   logic        wready;
@@ -172,7 +172,7 @@ module board_top (
   logic [ 1:0] bresp;
   logic        arvalid;
   logic        arready;
-  logic [ 4:0] araddr;
+  logic [ 6:0] araddr;
   logic [ 2:0] arprot;
   logic        rvalid;
   logic        rready;
@@ -182,7 +182,7 @@ module board_top (
   uart_axil #(
       .CLK_FREQ_HZ(125_000_000),
       .BAUD_RATE  (115_200),
-      .ADDR_WIDTH (5),
+      .ADDR_WIDTH (7),
       .DATA_WIDTH (32)
   ) u_bridge (
       .clk(clk125),
