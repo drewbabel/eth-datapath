@@ -5,7 +5,8 @@ module datapath_top #(
     parameter int N_ENTRIES = 2,
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = {48'h02_00_00_00_00_01, 48'h02_00_00_00_00_00},
     parameter logic [N_ENTRIES-1:0] MATCH_DEST = 2'b10,
-    parameter int CREDIT_DEPTH = 16
+    parameter int CREDIT_DEPTH = 16,
+    parameter int PHY_PORTS = 2
 ) (
     input logic clk,
     input logic clk90,
@@ -81,53 +82,65 @@ module datapath_top #(
     logic       q_ready;
     logic [9:0] q_data;
 
-    eth_mac_1g_rgmii_fifo #(
-        .TARGET(TARGET),
-        .IODDR_STYLE("IODDR"),
-        .CLOCK_INPUT_STYLE("BUFR"),
-        .USE_CLK90("TRUE"),
-        .TX_FIFO_DEPTH(64),
-        .TX_FRAME_FIFO(0),
-        .RX_FIFO_DEPTH(64),
-        .RX_FRAME_FIFO(0)
-    ) u_mac (
-        .gtx_clk(clk),
-        .gtx_clk90(clk90),
-        .gtx_rst(!rst_n),
-        .logic_clk(clk),
-        .logic_rst(!rst_n),
-        .tx_axis_tdata(tx_tdata),
-        .tx_axis_tkeep(1'b1),
-        .tx_axis_tvalid(tx_tvalid),
-        .tx_axis_tready(tx_tready),
-        .tx_axis_tlast(tx_tlast),
-        .tx_axis_tuser(tx_tuser),
-        .rx_axis_tdata(rx_tdata),
-        .rx_axis_tkeep(),
-        .rx_axis_tvalid(rx_tvalid),
-        .rx_axis_tready(1'b1),
-        .rx_axis_tlast(rx_tlast),
-        .rx_axis_tuser(rx_tuser),
-        .rgmii_rx_clk(rgmii_rx_clk[i]),
-        .rgmii_rxd(rgmii_rxd[i]),
-        .rgmii_rx_ctl(rgmii_rx_ctl[i]),
-        .rgmii_tx_clk(rgmii_tx_clk[i]),
-        .rgmii_txd(rgmii_txd[i]),
-        .rgmii_tx_ctl(rgmii_tx_ctl[i]),
-        .tx_error_underflow(),
-        .tx_fifo_overflow(),
-        .tx_fifo_bad_frame(),
-        .tx_fifo_good_frame(),
-        .rx_error_bad_frame(),
-        .rx_error_bad_fcs(),
-        .rx_fifo_overflow(),
-        .rx_fifo_bad_frame(),
-        .rx_fifo_good_frame(),
-        .speed(),
-        .cfg_ifg(8'd12),
-        .cfg_tx_enable(1'b1),
-        .cfg_rx_enable(1'b1)
-    );
+    if (i < PHY_PORTS) begin : g_phy
+      eth_mac_1g_rgmii_fifo #(
+          .TARGET(TARGET),
+          .IODDR_STYLE("IODDR"),
+          .CLOCK_INPUT_STYLE("BUFR"),
+          .USE_CLK90("TRUE"),
+          .TX_FIFO_DEPTH(64),
+          .TX_FRAME_FIFO(0),
+          .RX_FIFO_DEPTH(64),
+          .RX_FRAME_FIFO(0)
+      ) u_mac (
+          .gtx_clk(clk),
+          .gtx_clk90(clk90),
+          .gtx_rst(!rst_n),
+          .logic_clk(clk),
+          .logic_rst(!rst_n),
+          .tx_axis_tdata(tx_tdata),
+          .tx_axis_tkeep(1'b1),
+          .tx_axis_tvalid(tx_tvalid),
+          .tx_axis_tready(tx_tready),
+          .tx_axis_tlast(tx_tlast),
+          .tx_axis_tuser(tx_tuser),
+          .rx_axis_tdata(rx_tdata),
+          .rx_axis_tkeep(),
+          .rx_axis_tvalid(rx_tvalid),
+          .rx_axis_tready(1'b1),
+          .rx_axis_tlast(rx_tlast),
+          .rx_axis_tuser(rx_tuser),
+          .rgmii_rx_clk(rgmii_rx_clk[i]),
+          .rgmii_rxd(rgmii_rxd[i]),
+          .rgmii_rx_ctl(rgmii_rx_ctl[i]),
+          .rgmii_tx_clk(rgmii_tx_clk[i]),
+          .rgmii_txd(rgmii_txd[i]),
+          .rgmii_tx_ctl(rgmii_tx_ctl[i]),
+          .tx_error_underflow(),
+          .tx_fifo_overflow(),
+          .tx_fifo_bad_frame(),
+          .tx_fifo_good_frame(),
+          .rx_error_bad_frame(),
+          .rx_error_bad_fcs(),
+          .rx_fifo_overflow(),
+          .rx_fifo_bad_frame(),
+          .rx_fifo_good_frame(),
+          .speed(),
+          .cfg_ifg(8'd12),
+          .cfg_tx_enable(1'b1),
+          .cfg_rx_enable(1'b1)
+      );
+
+    end else begin : g_no_phy
+      assign rx_tdata = 8'd0;
+      assign rx_tvalid = 1'b0;
+      assign rx_tlast = 1'b0;
+      assign rx_tuser = 1'b0;
+      assign tx_tready = 1'b1;
+      assign rgmii_tx_clk[i] = 1'b0;
+      assign rgmii_txd[i] = 4'd0;
+      assign rgmii_tx_ctl[i] = 1'b0;
+    end
 
     rx_shim #(
         .N_ENTRIES(N_ENTRIES),
