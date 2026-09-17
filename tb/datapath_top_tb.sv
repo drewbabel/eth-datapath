@@ -25,7 +25,7 @@ module datapath_top_tb ();
 
   logic s_axi_awvalid = 1'b0;
   logic s_axi_awready;
-  logic [4:0] s_axi_awaddr = '0;
+  logic [6:0] s_axi_awaddr = '0;
   logic s_axi_wvalid = 1'b0;
   logic s_axi_wready;
   logic [31:0] s_axi_wdata = '0;
@@ -34,7 +34,7 @@ module datapath_top_tb ();
   logic [1:0] s_axi_bresp;
   logic s_axi_arvalid = 1'b0;
   logic s_axi_arready;
-  logic [4:0] s_axi_araddr = '0;
+  logic [6:0] s_axi_araddr = '0;
   logic s_axi_rvalid;
   logic s_axi_rready = 1'b0;
   logic [31:0] s_axi_rdata;
@@ -237,7 +237,7 @@ module datapath_top_tb ();
     drain(200);
   endtask
 
-  task automatic axil_write(input logic [4:0] addr, input logic [31:0] data);
+  task automatic axil_write(input logic [6:0] addr, input logic [31:0] data);
     @(posedge clk);
     #1 s_axi_awaddr = addr;
     s_axi_wdata   = data;
@@ -251,7 +251,7 @@ module datapath_top_tb ();
     #1 s_axi_bready = 1'b0;
   endtask
 
-  task automatic axil_read(input logic [4:0] addr, output logic [31:0] data);
+  task automatic axil_read(input logic [6:0] addr, output logic [31:0] data);
     @(posedge clk);
     #1 s_axi_araddr = addr;
     s_axi_arvalid = 1'b1;
@@ -265,20 +265,20 @@ module datapath_top_tb ();
 
   task automatic check_counters();
     logic [31:0] v;
-    axil_read(5'h10, v);
+    axil_read(7'h40, v);
     check($sformatf("port 0 overflow count %0d", v), v == 0);
-    axil_read(5'h14, v);
+    axil_read(7'h44, v);
     check($sformatf("port 0 drop count %0d of %0d", v, exp_drops[0]), v == 32'(exp_drops[0]));
-    axil_read(5'h18, v);
+    axil_read(7'h48, v);
     check($sformatf("port 1 overflow count %0d", v), v == 0);
-    axil_read(5'h1C, v);
+    axil_read(7'h4C, v);
     check($sformatf("port 1 drop count %0d of %0d", v, exp_drops[1]), v == 32'(exp_drops[1]));
   endtask
 
   task automatic check_scratch();
     logic [31:0] v;
-    axil_write(5'h04, 32'hA5A5_0104);
-    axil_read(5'h04, v);
+    axil_write(7'h04, 32'hA5A5_0104);
+    axil_read(7'h04, v);
     check("writable register readback", v == 32'hA5A5_0104);
   endtask
 
