@@ -9,6 +9,7 @@ module latency_probe_tb;
   logic rst_n = 1'b0;
   logic rx_ctl = 1'b0;
   logic tx_ctl = 1'b0;
+  logic discard = 1'b0;
   logic clear = 1'b0;
   logic snapshot = 1'b0;
 
@@ -35,6 +36,7 @@ module latency_probe_tb;
       .rst_n(rst_n),
       .rx_ctl(rx_ctl),
       .tx_ctl(tx_ctl),
+      .discard(discard),
       .clear(clear),
       .snapshot(snapshot),
       .stat_min(stat_min),
@@ -120,6 +122,14 @@ module latency_probe_tb;
     end
   endtask  // Automatic
 
+  task automatic do_discard();
+    @(negedge clk);
+    discard = 1'b1;
+    @(negedge clk);
+    discard = 1'b0;
+    repeat (4) @(negedge clk);
+  endtask  // Automatic
+
   task automatic check_stats(input string tag);
     logic [63:0] sum;
     logic [31:0] want_min;
@@ -189,6 +199,56 @@ module latency_probe_tb;
     check("overflow no count", stat_count, 32'd0);
   endtask  // Automatic
 
+  task automatic run_discard();
+    do_clear();
+    rx_only();
+    do_discard();
+    pair(25);
+    do_snapshot();
+    check_stats("after discard");
+    check("discard clean", stat_error, 32'd0);
+  endtask  // Automatic
+
+  task automatic run_discard_burst();
+    do_clear();
+    rx_only();
+    rx_only();
+    rx_only();
+    do_discard();
+    do_discard();
+    do_discard();
+    pair(18);
+    pair(31);
+    do_snapshot();
+    check_stats("burst discard");
+  endtask  // Automatic
+
+  task automatic run_collision(input int off);
+    int t0;
+    do_clear();
+    @(negedge clk);
+    rx_ctl = 1'b1;
+    t0 = cyc;
+    repeat (4) @(negedge clk);
+    rx_ctl = 1'b0;
+    tx_ctl = 1'b1;
+    repeat (4) @(negedge clk);
+    rx_ctl = 1'b1;
+    repeat (4) @(negedge clk);
+    rx_ctl = 1'b0;
+    repeat (8) @(negedge clk);
+    tx_ctl = 1'b0;
+    exp_q.push_back(cyc - t0);
+    repeat (off) @(negedge clk);
+    discard = 1'b1;
+    @(negedge clk);
+    discard = 1'b0;
+    repeat (8) @(negedge clk);
+    pair(30);
+    do_snapshot();
+    check_stats($sformatf("collision %0d", off));
+  endtask  // Automatic
+
   task automatic run_snapshot_held();
     do_clear();
     pair(30);
@@ -239,6 +299,17 @@ module latency_probe_tb;
 
     // Queue overrun
     run_overflow();
+
+    // Cancel one stamp
+    run_discard();
+
+    // Cancel three stamps
+    run_discard_burst();
+
+    // Same cycle collision
+    run_collision(1);
+    run_collision(2);
+    run_collision(3);
 
     // Held high
     run_snapshot_held();
