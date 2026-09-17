@@ -157,15 +157,17 @@ def run_throughput(lib, handle, rx, src, count, size, settle):
     rx.last = None
     base = rx.count
     frames = [build_frame(src, 1_000_000 + i, size) for i in range(count)]
+    failed = 0
     start = time.perf_counter()
     for frame in frames:
-        lib.pcap_sendpacket(handle, frame, len(frame))
+        if lib.pcap_sendpacket(handle, frame, len(frame)) != 0:
+            failed += 1
     push = time.perf_counter() - start
     time.sleep(settle)
     got = rx.count - base
     span = (rx.last - rx.first) if (rx.first and rx.last and rx.last > rx.first) else None
     wire = None if span is None else got * (size + 20) * 8 / span / 1e6
-    return got, push, span, wire
+    return got, push, span, wire, failed
 
 
 def read_register(port, addr):
@@ -218,7 +220,7 @@ def relative_stdev(values):
 def one_trial(lib, handle, rx, src, port, size, count, settle):
     probe_command(port, CMD_CLEAR)
     dropped = read_register(port, COUNTER_ADDRS[1])
-    got, push, span, wire = run_throughput(lib, handle, rx, src, count, size, settle)
+    got, push, span, wire, failed = run_throughput(lib, handle, rx, src, count, size, settle)
     probe_command(port, CMD_SNAPSHOT)
     stats = probe_read(port)
     stats["stray"] = read_register(port, COUNTER_ADDRS[1]) - dropped
@@ -226,6 +228,7 @@ def one_trial(lib, handle, rx, src, port, size, count, settle):
     stats["returned"] = got
     stats["push_s"] = push
     stats["wire_mbps"] = wire
+    stats["failed"] = failed
     return stats
 
 
@@ -233,9 +236,9 @@ def print_table(rows):
     print("")
     print("latency at the pins, first bit in to last bit out, 8 ns resolution")
     print("")
-    print("  bytes  paired   min us   avg us   max us   rsd %  return Mb/s  unpaired  overflow  stray")
+    print("  bytes  paired   min us   avg us   max us   rsd %  return Mb/s  unpaired  overflow  stray  unsent")
     for r in rows:
-        print("  %5d  %6d  %7.3f  %7.3f  %7.3f  %6.2f  %11s  %8d  %8d  %5d" % (
+        print("  %5d  %6d  %7.3f  %7.3f  %7.3f  %6.2f  %11s  %8d  %8d  %5d  %6d" % (
             r["size"],
             r["count"],
             r["min_ns"] / 1000.0,
@@ -246,6 +249,7 @@ def print_table(rows):
             r["unpaired"],
             r["overflow"],
             r["stray"],
+            r["failed"],
         ))
 
 
@@ -297,6 +301,7 @@ def main():
                 "wire_mbps": best["wire_mbps"],
                 "unpaired": sum(t["unpaired"] for t in trials),
                 "stray": sum(t["stray"] for t in trials),
+                "failed": sum(t["failed"] for t in trials),
                 "overflow": sum(t["overflow"] for t in trials),
             })
         after = [read_register(port, a) for a in COUNTER_ADDRS]
