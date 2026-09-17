@@ -6,7 +6,9 @@ module datapath_top #(
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = {48'h02_00_00_00_00_01, 48'h02_00_00_00_00_00},
     parameter logic [N_ENTRIES-1:0] MATCH_DEST = 2'b10,
     parameter int CREDIT_DEPTH = 16,
-    parameter int PHY_PORTS = 2
+    parameter int PHY_PORTS = 2,
+    parameter int PROBE_DEPTH = 16,
+    parameter int ADDR_WIDTH = 7
 ) (
     input logic clk,
     input logic clk90,
@@ -23,7 +25,7 @@ module datapath_top #(
     // Control plane
     input  logic        s_axi_awvalid,
     output logic        s_axi_awready,
-    input  logic [ 4:0] s_axi_awaddr,
+    input  logic [ADDR_WIDTH-1:0] s_axi_awaddr,
     input  logic [ 2:0] s_axi_awprot,
     input  logic        s_axi_wvalid,
     output logic        s_axi_wready,
@@ -34,7 +36,7 @@ module datapath_top #(
     output logic [ 1:0] s_axi_bresp,
     input  logic        s_axi_arvalid,
     output logic        s_axi_arready,
-    input  logic [ 4:0] s_axi_araddr,
+    input  logic [ADDR_WIDTH-1:0] s_axi_araddr,
     input  logic [ 2:0] s_axi_arprot,
     output logic        s_axi_rvalid,
     input  logic        s_axi_rready,
@@ -44,6 +46,7 @@ module datapath_top #(
 
   localparam int NPorts = 2;
   localparam int DestW = 1;
+  localparam int NumCsr = 2 ** (ADDR_WIDTH - 3);
 
   // Port counters
   logic [NPorts-1:0][     31:0] overflow_cnt;
@@ -57,6 +60,9 @@ module datapath_top #(
   logic [NPorts-1:0][DestW-1:0] sw_s_tdest;
 
   // Switch egress
+  logic [NPorts-1:0] mon_rx_dv;
+  logic [NPorts-1:0] mon_tx_en;
+
   logic [NPorts-1:0]            sw_m_tvalid;
   logic [NPorts-1:0]            sw_m_tready;
   logic [NPorts-1:0][      8:0] sw_m_tdata;
@@ -128,7 +134,9 @@ module datapath_top #(
           .speed(),
           .cfg_ifg(8'd12),
           .cfg_tx_enable(1'b1),
-          .cfg_rx_enable(1'b1)
+          .cfg_rx_enable(1'b1),
+          .mon_rx_dv(mon_rx_dv[i]),
+          .mon_tx_en(mon_tx_en[i])
       );
 
     end else begin : g_no_phy
@@ -140,6 +148,8 @@ module datapath_top #(
       assign rgmii_tx_clk[i] = 1'b0;
       assign rgmii_txd[i] = 4'd0;
       assign rgmii_tx_ctl[i] = 1'b0;
+      assign mon_rx_dv[i] = 1'b0;
+      assign mon_tx_en[i] = 1'b0;
     end
 
     rx_shim #(
@@ -224,8 +234,50 @@ module datapath_top #(
       .m_tlast(sw_m_tlast)
   );
 
+  logic [NumCsr-1:0][31:0] status_w;
+  logic [NumCsr-1:0][31:0] control_w;
+
+  logic [31:0] probe_min;
+  logic [31:0] probe_max;
+  logic [31:0] probe_count;
+  logic [31:0] probe_sum_lo;
+  logic [31:0] probe_sum_hi;
+  logic [31:0] probe_error;
+
+  latency_probe #(
+      .DEPTH(PROBE_DEPTH)
+  ) u_probe (
+      .clk(clk),
+      .rst_n(rst_n),
+      .rx_ctl(mon_rx_dv[0]),
+      .tx_ctl(mon_tx_en[0]),
+      .clear(control_w[0][0]),
+      .snapshot(control_w[0][1]),
+      .stat_min(probe_min),
+      .stat_max(probe_max),
+      .stat_count(probe_count),
+      .stat_sum_lo(probe_sum_lo),
+      .stat_sum_hi(probe_sum_hi),
+      .stat_error(probe_error)
+  );
+
+  assign status_w[0] = overflow_cnt[0];
+  assign status_w[1] = drop_cnt[0];
+  assign status_w[2] = overflow_cnt[1];
+  assign status_w[3] = drop_cnt[1];
+  assign status_w[4] = probe_min;
+  assign status_w[5] = probe_max;
+  assign status_w[6] = probe_count;
+  assign status_w[7] = probe_sum_lo;
+  assign status_w[8] = probe_sum_hi;
+  assign status_w[9] = probe_error;
+
+  for (genvar i = 10; i < NumCsr; i++) begin : g_spare
+    assign status_w[i] = 32'd0;
+  end
+
   axil_csr #(
-      .ADDR_WIDTH(5),
+      .ADDR_WIDTH(ADDR_WIDTH),
       .DATA_WIDTH(32)
   ) u_csr (
       .clk(clk),
@@ -249,7 +301,8 @@ module datapath_top #(
       .s_axi_rready(s_axi_rready),
       .s_axi_rdata(s_axi_rdata),
       .s_axi_rresp(s_axi_rresp),
-      .status({drop_cnt[1], overflow_cnt[1], drop_cnt[0], overflow_cnt[0]})
+      .status(status_w),
+      .control(control_w)
   );
 
 endmodule
