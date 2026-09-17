@@ -23,7 +23,7 @@ jobs:
       - name: Run every testbench
         run: |
           shopt -s nullglob
-          for tb in tb/*_tb.sv; do
+          for tb in tb/*_tb.sv lib/*/tb/*_tb.sv; do
             mod=$(basename "$tb" _tb.sv)
             echo "== $mod =="
             make MOD="$mod"
