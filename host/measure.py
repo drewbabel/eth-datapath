@@ -237,6 +237,8 @@ def run_hwgen(port, size, count, gap):
     stats = probe_read(port)
     stats["sent"] = sent
     stats["offered"] = 1000.0 * size / (size + gap + 1)
+    stats["fps"] = 1e9 / ((size + gap + 1) * 8.0)
+    stats["fps_max"] = 1e9 / ((size + 24) * 8.0)
     return stats
 
 
@@ -260,18 +262,17 @@ def print_rfc2544(rows):
     print("")
     print("largest lossless rate, binary search on the gap")
     print("")
-    print("  bytes  gap  offered Mb/s   forwarded   min us   avg us   max us")
+    print("  bytes  gap   frames/s  percent of line   payload Mb/s   latency us")
     for r in rows:
         if r is None:
             continue
-        print("  %5d  %3d  %12.1f  %10d  %7.3f  %7.3f  %7.3f" % (
+        print("  %5d  %3d  %9.0f  %15.1f  %13.1f  %11.3f" % (
             r["size"],
             r["gap"],
+            r["fps"],
+            100.0 * r["fps"] / r["fps_max"],
             r["offered"],
-            r["count"],
-            r["min_ns"] / 1000.0,
             r["avg_ns"] / 1000.0,
-            r["max_ns"] / 1000.0,
         ))
 
 
