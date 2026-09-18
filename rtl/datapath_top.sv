@@ -292,6 +292,7 @@ module datapath_top #(
       .clk(clk),
       .rst_n(rst_n),
       .rx_ctl(gen_busy ? gen_tvalid : mon_rx_dv[0]),
+      .rx_last(gen_busy ? gen_tlast : 1'b0),
       .tx_ctl(mon_tx_en[0]),
       .verdict_valid(retire_valid[0]),
       .verdict_drop(retire_drop[0]),

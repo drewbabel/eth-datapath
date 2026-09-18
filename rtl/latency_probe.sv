@@ -8,6 +8,7 @@ module latency_probe #(
 
     // Pin envelopes
     input logic rx_ctl,
+    input logic rx_last,
     input logic tx_ctl,
 
     // Per frame verdict
@@ -36,15 +37,18 @@ module latency_probe #(
   end
 
   (* ASYNC_REG = "TRUE" *) logic [2:0] rx_sync;
+  (* ASYNC_REG = "TRUE" *) logic [2:0] last_sync;
   (* ASYNC_REG = "TRUE" *) logic [2:0] tx_sync;
 
   always_ff @(posedge clk) begin
     if (!rst_n) begin
-      rx_sync <= 3'd0;
-      tx_sync <= 3'd0;
+      rx_sync   <= 3'd0;
+      last_sync <= 3'd0;
+      tx_sync   <= 3'd0;
     end else begin
-      rx_sync <= {rx_sync[1:0], rx_ctl};
-      tx_sync <= {tx_sync[1:0], tx_ctl};
+      rx_sync   <= {rx_sync[1:0], rx_ctl};
+      last_sync <= {last_sync[1:0], rx_last};
+      tx_sync   <= {tx_sync[1:0], tx_ctl};
     end
   end
 
@@ -53,7 +57,7 @@ module latency_probe #(
   // Last bit out
   logic tx_done;
 
-  assign rx_start = rx_sync[1] && !rx_sync[2];
+  assign rx_start = rx_sync[1] && (!rx_sync[2] || last_sync[2]);
   assign tx_done  = !tx_sync[1] && tx_sync[2];
 
   logic clear_q;
