@@ -10,8 +10,9 @@ module latency_probe #(
     input logic rx_ctl,
     input logic tx_ctl,
 
-    // Cancels one stamp
-    input logic discard,
+    // Per frame verdict
+    input logic verdict_valid,
+    input logic verdict_drop,
 
     // Host commands
     input logic clear,
@@ -82,17 +83,36 @@ module latency_probe #(
 
   assign fifo_rst_n = rst_n && !clear_pulse;
   assign push = rx_start;
-  assign pop = tx_done && !fifo_empty;
 
-  logic [7:0] pending;
-  logic       drop_pop;
+  // Retires in order
+  localparam int VAw = $clog2(DEPTH);
 
-  assign drop_pop = (pending != 8'd0) && !pop && !fifo_empty;
+  logic          v_mem    [DEPTH];
+  logic [VAw:0]  v_wr_ptr;
+  logic [VAw:0]  v_rd_ptr;
+  logic          v_empty;
+  logic          v_full;
+  logic          v_head;
+  logic          drop_pop;
+
+  assign v_empty = v_wr_ptr == v_rd_ptr;
+  assign v_full = (v_wr_ptr[VAw] != v_rd_ptr[VAw]) && (v_wr_ptr[VAw-1:0] == v_rd_ptr[VAw-1:0]);
+  assign v_head = v_mem[v_rd_ptr[VAw-1:0]];
+
+  assign drop_pop = !v_empty && v_head && !fifo_empty;
+  assign pop = !v_empty && !v_head && tx_done && !fifo_empty;
 
   always_ff @(posedge clk) begin
-    if (!rst_n || clear_pulse) pending <= 8'd0;
-    else if (discard && !drop_pop) pending <= pending + 8'd1;
-    else if (!discard && drop_pop) pending <= pending - 8'd1;
+    if (!fifo_rst_n) begin
+      v_wr_ptr <= '0;
+      v_rd_ptr <= '0;
+    end else begin
+      if (verdict_valid && !v_full) begin
+        v_mem[v_wr_ptr[VAw-1:0]] <= verdict_drop;
+        v_wr_ptr <= v_wr_ptr + 1'b1;
+      end
+      if (pop || drop_pop) v_rd_ptr <= v_rd_ptr + 1'b1;
+    end
   end
 
   sync_fifo #(
@@ -143,7 +163,7 @@ module latency_probe #(
       err_unpaired <= 16'd0;
     end else begin
       if (rx_start && fifo_full && err_over != 16'hFFFF) err_over <= err_over + 16'd1;
-      if (tx_done && fifo_empty && err_unpaired != 16'hFFFF) err_unpaired <= err_unpaired + 16'd1;
+      if (tx_done && !pop && err_unpaired != 16'hFFFF) err_unpaired <= err_unpaired + 16'd1;
       if (pop_q) begin
         acc_count <= acc_count + 32'd1;
         acc_sum   <= acc_sum + {32'd0, delta};

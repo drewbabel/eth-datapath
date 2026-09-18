@@ -66,8 +66,8 @@ module datapath_top #(
   logic       gen_busy;
   logic [31:0] gen_sent;
 
-  logic [NPorts-1:0] drop_evt;
-  logic [NPorts-1:0] lost_evt;
+  logic [NPorts-1:0] retire_valid;
+  logic [NPorts-1:0] retire_drop;
   logic [NPorts-1:0] mon_rx_dv;
   logic [NPorts-1:0] mon_tx_en;
 
@@ -196,8 +196,8 @@ module datapath_top #(
         .m_tdest(sw_s_tdest[i]),
         .overflow_cnt(overflow_cnt[i]),
         .drop_cnt(drop_cnt[i]),
-        .drop_evt(drop_evt[i]),
-        .lost_evt(lost_evt[i])
+        .retire_valid(retire_valid[i]),
+        .retire_drop(retire_drop[i])
     );
 
     // Last rides data
@@ -293,7 +293,8 @@ module datapath_top #(
       .rst_n(rst_n),
       .rx_ctl(gen_busy ? gen_tvalid : mon_rx_dv[0]),
       .tx_ctl(mon_tx_en[0]),
-      .discard(drop_evt[0] || lost_evt[0]),
+      .verdict_valid(retire_valid[0]),
+      .verdict_drop(retire_drop[0]),
       .clear(control_w[0][0]),
       .snapshot(control_w[0][1]),
       .stat_min(probe_min),
