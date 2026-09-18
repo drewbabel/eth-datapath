@@ -30,6 +30,11 @@ PROBE_COUNT = 0x58
 PROBE_SUM_LO = 0x5C
 PROBE_SUM_HI = 0x60
 PROBE_ERROR = 0x64
+PROBE_SENT = 0x68
+
+GEN_CFG = 0x04
+GEN_COUNT = 0x08
+CMD_START = 0x4
 
 TICK_NS = 8.0
 SWEEP_SIZES = [64, 128, 256, 512, 1024, 1514]
@@ -219,6 +224,40 @@ def probe_read(port):
     }
 
 
+def run_hwgen(port, size, count, gap):
+    probe_command(port, CMD_CLEAR)
+    write_register(port, GEN_CFG, (gap << 16) | size)
+    write_register(port, GEN_COUNT, count)
+    probe_command(port, CMD_START)
+    deadline = time.time() + 30.0
+    sent = 0
+    while sent < count and time.time() < deadline:
+        sent = read_register(port, PROBE_SENT)
+    probe_command(port, CMD_SNAPSHOT)
+    stats = probe_read(port)
+    stats["sent"] = sent
+    stats["offered"] = 1000.0 * size / (size + gap + 1)
+    return stats
+
+
+def print_hwgen(rows):
+    print("")
+    print("frames generated on the board at the datapath input")
+    print("")
+    print("  bytes     sent  forwarded     lost  offered Mb/s   min us   avg us   max us")
+    for r in rows:
+        print("  %5d  %7d  %9d  %7d  %12.1f  %7.3f  %7.3f  %7.3f" % (
+            r["size"],
+            r["sent"],
+            r["count"],
+            r["sent"] - r["count"],
+            r["offered"],
+            r["min_ns"] / 1000.0,
+            r["avg_ns"] / 1000.0,
+            r["max_ns"] / 1000.0,
+        ))
+
+
 def relative_stdev(values):
     if len(values) < 2:
         return 0.0
@@ -273,6 +312,8 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     ap.add_argument("--size", type=int, help="single frame size without checksum")
     ap.add_argument("--sweep", action="store_true", help="run the standard size sweep")
+    ap.add_argument("--hwgen", action="store_true", help="generate frames on the board")
+    ap.add_argument("--gap", type=int, default=12, help="idle bytes between generated frames")
     ap.add_argument("--count", type=int, default=5000, help="frames per trial")
     ap.add_argument("--iterations", type=int, default=3)
     ap.add_argument("--settle", type=float, default=0.5)
@@ -285,6 +326,16 @@ def main():
     for size in sizes:
         if not MIN_FRAME <= size <= MAX_FRAME:
             sys.exit("size must be between %d and %d" % (MIN_FRAME, MAX_FRAME))
+
+    if args.hwgen:
+        rows = []
+        with serial.Serial(args.serial, args.baud, timeout=2) as port:
+            for size in sizes:
+                stats = run_hwgen(port, size, args.count, args.gap)
+                stats["size"] = size
+                rows.append(stats)
+        print_hwgen(rows)
+        return
 
     lib = load_pcap()
     handle = open_capture(lib, args.iface)
