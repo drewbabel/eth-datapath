@@ -240,6 +240,41 @@ def run_hwgen(port, size, count, gap):
     return stats
 
 
+def find_max_rate(port, size, count):
+    low = 0
+    high = 255
+    best = None
+    while low <= high:
+        mid = (low + high) // 2
+        stats = run_hwgen(port, size, count, mid)
+        if stats["sent"] - stats["count"] == 0:
+            best = stats
+            best["gap"] = mid
+            high = mid - 1
+        else:
+            low = mid + 1
+    return best
+
+
+def print_rfc2544(rows):
+    print("")
+    print("largest lossless rate, binary search on the gap")
+    print("")
+    print("  bytes  gap  offered Mb/s   forwarded   min us   avg us   max us")
+    for r in rows:
+        if r is None:
+            continue
+        print("  %5d  %3d  %12.1f  %10d  %7.3f  %7.3f  %7.3f" % (
+            r["size"],
+            r["gap"],
+            r["offered"],
+            r["count"],
+            r["min_ns"] / 1000.0,
+            r["avg_ns"] / 1000.0,
+            r["max_ns"] / 1000.0,
+        ))
+
+
 def print_hwgen(rows):
     print("")
     print("frames generated on the board at the datapath input")
@@ -313,6 +348,7 @@ def main():
     ap.add_argument("--size", type=int, help="single frame size without checksum")
     ap.add_argument("--sweep", action="store_true", help="run the standard size sweep")
     ap.add_argument("--hwgen", action="store_true", help="generate frames on the board")
+    ap.add_argument("--rfc2544", action="store_true", help="search for the lossless rate")
     ap.add_argument("--gap", type=int, default=12, help="idle bytes between generated frames")
     ap.add_argument("--count", type=int, default=5000, help="frames per trial")
     ap.add_argument("--iterations", type=int, default=3)
@@ -326,6 +362,17 @@ def main():
     for size in sizes:
         if not MIN_FRAME <= size <= MAX_FRAME:
             sys.exit("size must be between %d and %d" % (MIN_FRAME, MAX_FRAME))
+
+    if args.rfc2544:
+        rows = []
+        with serial.Serial(args.serial, args.baud, timeout=2) as port:
+            for size in sizes:
+                stats = find_max_rate(port, size, args.count)
+                if stats is not None:
+                    stats["size"] = size
+                rows.append(stats)
+        print_rfc2544(rows)
+        return
 
     if args.hwgen:
         rows = []
