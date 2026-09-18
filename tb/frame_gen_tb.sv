@@ -120,6 +120,34 @@ module frame_gen_tb;
     check("gap length", 32'(gap_beats), 32'd21);
   endtask  // Automatic
 
+  task automatic run_period(input int size, input int gap);
+    int   cyc;
+    int   last;
+    int   seen;
+    int   period;
+    frame_bytes = 11'(size);
+    frame_count = 32'd4;
+    gap_bytes   = 8'(gap);
+    cyc         = 0;
+    last        = 0;
+    seen        = 0;
+    period      = 0;
+    @(negedge clk);
+    start = 1'b1;
+    @(negedge clk);
+    start = 1'b0;
+    while (busy) begin
+      @(negedge clk);
+      cyc = cyc + 1;
+      if (m_tvalid && m_tlast) begin
+        if (seen > 0) period = cyc - last;
+        last = cyc;
+        seen = seen + 1;
+      end
+    end
+    check("frame period", 32'(period), 32'(size + gap));
+  endtask  // Automatic
+
   task automatic run_held_start();
     frame_bytes = 11'd64;
     frame_count = 32'd3;
@@ -171,6 +199,11 @@ module frame_gen_tb;
 
     // Gap length
     run_gap();
+
+    // Frame period
+    run_period(64, 0);
+    run_period(64, 12);
+    run_period(1514, 1);
 
     // Start held high
     run_held_start();
