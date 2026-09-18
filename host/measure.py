@@ -236,8 +236,8 @@ def run_hwgen(port, size, count, gap):
     probe_command(port, CMD_SNAPSHOT)
     stats = probe_read(port)
     stats["sent"] = sent
-    stats["offered"] = 1000.0 * size / (size + gap + 1)
-    stats["fps"] = 1e9 / ((size + gap + 1) * 8.0)
+    stats["offered"] = 1000.0 * size / (size + gap)
+    stats["fps"] = 1e9 / ((size + gap) * 8.0)
     stats["fps_max"] = 1e9 / ((size + 24) * 8.0)
     return stats
 
