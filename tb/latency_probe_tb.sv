@@ -8,6 +8,7 @@ module latency_probe_tb;
   logic clk = 1'b0;
   logic rst_n = 1'b0;
   logic rx_ctl = 1'b0;
+  logic rx_last = 1'b0;
   logic tx_ctl = 1'b0;
   logic verdict_valid = 1'b0;
   logic verdict_drop = 1'b0;
@@ -36,6 +37,7 @@ module latency_probe_tb;
       .clk(clk),
       .rst_n(rst_n),
       .rx_ctl(rx_ctl),
+      .rx_last(rx_last),
       .tx_ctl(tx_ctl),
       .verdict_valid(verdict_valid),
       .verdict_drop(verdict_drop),
@@ -263,6 +265,45 @@ module latency_probe_tb;
     check_stats("in-flight discard");
   endtask  // Automatic
 
+  task automatic run_back_to_back();
+    int t0;
+    int t1;
+    do_clear();
+    @(negedge clk);
+    rx_ctl = 1'b1;
+    t0 = cyc;
+    repeat (2) @(negedge clk);
+    rx_last = 1'b1;
+    @(negedge clk);
+    rx_last = 1'b0;
+    t1 = cyc;
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b0;
+    @(negedge clk);
+    verdict_valid = 1'b0;
+    repeat (2) @(negedge clk);
+    rx_last = 1'b1;
+    @(negedge clk);
+    rx_ctl = 1'b0;
+    rx_last = 1'b0;
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b0;
+    @(negedge clk);
+    verdict_valid = 1'b0;
+    tx_ctl = 1'b1;
+    repeat (5) @(negedge clk);
+    tx_ctl = 1'b0;
+    exp_q.push_back(cyc - t0);
+    repeat (4) @(negedge clk);
+    tx_ctl = 1'b1;
+    repeat (5) @(negedge clk);
+    tx_ctl = 1'b0;
+    exp_q.push_back(cyc - t1);
+    repeat (6) @(negedge clk);
+    do_snapshot();
+    check_stats("back to back");
+  endtask  // Automatic
+
   task automatic run_collision(input int off);
     int t0;
     do_clear();
@@ -354,6 +395,8 @@ module latency_probe_tb;
 
     // Same cycle collision
     run_inflight_discard();
+
+    run_back_to_back();
 
     run_collision(1);
     run_collision(2);
