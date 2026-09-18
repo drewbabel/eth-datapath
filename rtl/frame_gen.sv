@@ -113,6 +113,7 @@ module frame_gen #(
             byte_idx    <= 11'd0;
             gap_left    <= gap_q - 8'd1;
             if (frames_left == 32'd1) state <= IDLE;
+            else if (gap_q == 8'd0) state <= SEND;
             else state <= GAP;
           end
         end
