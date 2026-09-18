@@ -15,7 +15,7 @@ A cut-through gigabit Ethernet switching datapath.
 | 1024 | 8.584 | 8.588 | 8.592 |
 | 1514 | 12.504 | 12.508 | 12.512 |
 
-Subtracting the time a frame of each size occupies the wire leaves 296 ns at every size. Forwarding costs 37 cycles of the 125 MHz clock and holds constant across a 24x range of frame length.
+Subtracting the time a frame of each size occupies the wire leaves 296 ns at every size. Forwarding costs 37 cycles of the 125 MHz clock and holds constant across a 24x range of frame length. Injecting frames past the controller's receive path shortens every row by 152 ns, which splits those 37 cycles into 19 in the controller's receive path and 18 in switching and transmit.
 
 RFC 8238 defines latency for a forwarding device as first bit in to last bit out, measured at the ports. A free-running counter stamps a frame on arrival and on departure, a queue pairs the two, and minimum, maximum, sum and count read back over a serial link. Each row is 3 iterations of 5,000 frames, with relative standard deviation across iterations at or below 0.03% against the 10% ceiling RFC 8239 sets.
 
