@@ -1,4 +1,4 @@
-"""Send frames at the board and read its counters back over the serial line."""
+"""Send frames at the board, then read latency and counters back over the serial line."""
 
 import argparse
 import ctypes
@@ -14,11 +14,30 @@ import serial
 ETH_TYPE = 0x88B5
 BOARD_MAC = bytes.fromhex("020000000000")
 SEQ_OFFSET = 14
-MIN_FRAME = 60
-MAX_FRAME = 1514
+MIN_FRAME = 64
+MAX_FRAME = 1518
 
 COUNTER_NAMES = ["port0 overflow", "port0 drop", "port1 overflow", "port1 drop"]
-COUNTER_ADDRS = [0x10, 0x14, 0x18, 0x1C]
+COUNTER_ADDRS = [0x40, 0x44, 0x48, 0x4C]
+
+CMD_ADDR = 0x00
+CMD_CLEAR = 0x1
+CMD_SNAPSHOT = 0x2
+
+PROBE_MIN = 0x50
+PROBE_MAX = 0x54
+PROBE_COUNT = 0x58
+PROBE_SUM_LO = 0x5C
+PROBE_SUM_HI = 0x60
+PROBE_ERROR = 0x64
+PROBE_SENT = 0x68
+
+GEN_CFG = 0x04
+GEN_COUNT = 0x08
+CMD_START = 0x4
+
+TICK_NS = 8.0
+SWEEP_SIZES = [64, 128, 256, 512, 1024, 1518]
 
 
 class TimeVal(ctypes.Structure):
@@ -91,6 +110,17 @@ def open_capture(lib, iface):
     return handle
 
 
+def link_bytes(iface):
+    import subprocess
+
+    out = subprocess.check_output(["netstat", "-I", iface, "-b"]).decode()
+    for line in out.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 10 and parts[0] == iface:
+            return int(parts[9])
+    return 0
+
+
 def host_mac(iface):
     import subprocess
 
@@ -138,37 +168,22 @@ class Receiver(threading.Thread):
             self.count += 1
 
 
-def run_latency(lib, handle, rx, src, count, size, timeout):
-    samples = []
-    lost = 0
-    for seq in range(count):
-        frame = build_frame(src, seq, size)
-        start = time.perf_counter()
-        lib.pcap_sendpacket(handle, frame, len(frame))
-        deadline = start + timeout
-        while seq not in rx.stamps and time.perf_counter() < deadline:
-            time.sleep(0)
-        if seq in rx.stamps:
-            samples.append((rx.stamps[seq] - start) * 1e6)
-        else:
-            lost += 1
-    return samples, lost
-
-
 def run_throughput(lib, handle, rx, src, count, size, settle):
     rx.first = None
     rx.last = None
     base = rx.count
-    frames = [build_frame(src, 1_000_000 + i, size) for i in range(count)]
+    frames = [build_frame(src, 1_000_000 + i, size - 4) for i in range(count)]
+    failed = 0
     start = time.perf_counter()
     for frame in frames:
-        lib.pcap_sendpacket(handle, frame, len(frame))
+        if lib.pcap_sendpacket(handle, frame, len(frame)) != 0:
+            failed += 1
     push = time.perf_counter() - start
     time.sleep(settle)
     got = rx.count - base
     span = (rx.last - rx.first) if (rx.first and rx.last and rx.last > rx.first) else None
     wire = None if span is None else got * (size + 20) * 8 / span / 1e6
-    return got, push, span, wire
+    return got, push, span, wire, failed
 
 
 def read_register(port, addr):
@@ -188,26 +203,188 @@ def write_register(port, addr, value):
         raise RuntimeError("no write acknowledgement at 0x%02x" % addr)
 
 
+def probe_command(port, bit):
+    write_register(port, CMD_ADDR, bit)
+    write_register(port, CMD_ADDR, 0)
+
+
+def probe_read(port):
+    count = read_register(port, PROBE_COUNT)
+    total = read_register(port, PROBE_SUM_LO) | (read_register(port, PROBE_SUM_HI) << 32)
+    low = read_register(port, PROBE_MIN)
+    high = read_register(port, PROBE_MAX)
+    err = read_register(port, PROBE_ERROR)
+    return {
+        "count": count,
+        "min_ns": low * TICK_NS,
+        "max_ns": high * TICK_NS,
+        "avg_ns": (total * TICK_NS / count) if count else 0.0,
+        "overflow": err & 0xFFFF,
+        "unpaired": (err >> 16) & 0xFFFF,
+    }
+
+
+def run_hwgen(port, size, count, gap):
+    sent_bytes = size - 4
+    probe_command(port, CMD_CLEAR)
+    write_register(port, GEN_CFG, (gap << 16) | sent_bytes)
+    write_register(port, GEN_COUNT, count)
+    probe_command(port, CMD_START)
+    deadline = time.time() + 30.0
+    sent = 0
+    while sent < count and time.time() < deadline:
+        sent = read_register(port, PROBE_SENT)
+    probe_command(port, CMD_SNAPSHOT)
+    stats = probe_read(port)
+    stats["sent"] = sent
+    stats["offered"] = 1000.0 * sent_bytes / (sent_bytes + gap)
+    stats["fps"] = 1e9 / ((sent_bytes + gap) * 8.0)
+    stats["fps_max"] = 1e9 / ((size + 20) * 8.0)
+    return stats
+
+
+def find_max_rate(port, size, count):
+    low = 0
+    high = 255
+    best = None
+    while low <= high:
+        mid = (low + high) // 2
+        stats = run_hwgen(port, size, count, mid)
+        if stats["sent"] - stats["count"] == 0:
+            best = stats
+            best["gap"] = mid
+            high = mid - 1
+        else:
+            low = mid + 1
+    return best
+
+
+def print_rfc2544(rows):
+    print("")
+    print("largest lossless rate, binary search on the gap")
+    print("")
+    print("  bytes  gap   frames/s  percent of line   payload Mb/s   latency us")
+    for r in rows:
+        if r is None:
+            continue
+        print("  %5d  %3d  %9.0f  %15.1f  %13.1f  %11.3f" % (
+            r["size"],
+            r["gap"],
+            r["fps"],
+            100.0 * r["fps"] / r["fps_max"],
+            r["offered"],
+            r["avg_ns"] / 1000.0,
+        ))
+
+
+def print_hwgen(rows):
+    print("")
+    print("frames generated on the board at the datapath input")
+    print("")
+    print("  bytes     sent  forwarded     lost  offered Mb/s   min us   avg us   max us")
+    for r in rows:
+        print("  %5d  %7d  %9d  %7d  %12.1f  %7.3f  %7.3f  %7.3f" % (
+            r["size"],
+            r["sent"],
+            r["count"],
+            r["sent"] - r["count"],
+            r["offered"],
+            r["min_ns"] / 1000.0,
+            r["avg_ns"] / 1000.0,
+            r["max_ns"] / 1000.0,
+        ))
+
+
+def relative_stdev(values):
+    if len(values) < 2:
+        return 0.0
+    mean = statistics.fmean(values)
+    if mean == 0:
+        return 0.0
+    return 100.0 * statistics.stdev(values) / mean
+
+
+def one_trial(lib, handle, rx, src, port, iface, size, count, settle):
+    probe_command(port, CMD_CLEAR)
+    dropped = read_register(port, COUNTER_ADDRS[1])
+    out_bytes = link_bytes(iface)
+    got, push, span, wire, failed = run_throughput(lib, handle, rx, src, count, size, settle)
+    probe_command(port, CMD_SNAPSHOT)
+    stats = probe_read(port)
+    stats["stray"] = read_register(port, COUNTER_ADDRS[1]) - dropped
+    stats["sent"] = count
+    stats["returned"] = got
+    stats["push_s"] = push
+    stats["wire_mbps"] = wire
+    stats["failed"] = failed
+    stats["onwire"] = (link_bytes(iface) - out_bytes) // (size - 4)
+    return stats
+
+
+def print_table(rows):
+    print("")
+    print("latency at the pins, first bit in to last bit out, 8 ns resolution")
+    print("")
+    print("  bytes  onwire  paired   min us   avg us   max us   rsd %  return Mb/s  unpaired  overflow  stray")
+    for r in rows:
+        print("  %5d  %6d  %6d  %7.3f  %7.3f  %7.3f  %6.2f  %11s  %8d  %8d  %5d" % (
+            r["size"],
+            r["onwire"],
+            r["count"],
+            r["min_ns"] / 1000.0,
+            r["avg_ns"] / 1000.0,
+            r["max_ns"] / 1000.0,
+            r["rsd"],
+            "%.1f" % r["wire_mbps"] if r["wire_mbps"] else "n/a",
+            r["unpaired"],
+            r["overflow"],
+            r["stray"],
+        ))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--iface", default="en13", help="host ethernet interface")
     ap.add_argument("--serial", default="/dev/cu.usbserial-AV0JX88M")
     ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--size", type=int, default=64, help="frame bytes without checksum")
-    ap.add_argument("--latency-count", type=int, default=200)
-    ap.add_argument("--throughput-count", type=int, default=5000)
-    ap.add_argument("--timeout", type=float, default=0.05)
+    ap.add_argument("--size", type=int, help="single frame size with checksum")
+    ap.add_argument("--sweep", action="store_true", help="run the standard size sweep")
+    ap.add_argument("--hwgen", action="store_true", help="generate frames on the board")
+    ap.add_argument("--rfc2544", action="store_true", help="search for the lossless rate")
+    ap.add_argument("--gap", type=int, default=12, help="idle bytes between generated frames")
+    ap.add_argument("--count", type=int, default=5000, help="frames per trial")
+    ap.add_argument("--iterations", type=int, default=3)
     ap.add_argument("--settle", type=float, default=0.5)
-    ap.add_argument("--skip-serial", action="store_true")
     args = ap.parse_args()
 
-    if not MIN_FRAME <= args.size <= MAX_FRAME:
-        sys.exit("size must be between %d and %d" % (MIN_FRAME, MAX_FRAME))
+    if args.sweep:
+        sizes = SWEEP_SIZES
+    else:
+        sizes = [args.size or 64]
+    for size in sizes:
+        if not MIN_FRAME <= size <= MAX_FRAME:
+            sys.exit("size must be between %d and %d" % (MIN_FRAME, MAX_FRAME))
 
-    before = [0] * len(COUNTER_ADDRS)
-    if not args.skip_serial:
+    if args.rfc2544:
+        rows = []
         with serial.Serial(args.serial, args.baud, timeout=2) as port:
-            before = [read_register(port, a) for a in COUNTER_ADDRS]
+            for size in sizes:
+                stats = find_max_rate(port, size, args.count)
+                if stats is not None:
+                    stats["size"] = size
+                rows.append(stats)
+        print_rfc2544(rows)
+        return
+
+    if args.hwgen:
+        rows = []
+        with serial.Serial(args.serial, args.baud, timeout=2) as port:
+            for size in sizes:
+                stats = run_hwgen(port, size, args.count, args.gap)
+                stats["size"] = size
+                rows.append(stats)
+        print_hwgen(rows)
+        return
 
     lib = load_pcap()
     handle = open_capture(lib, args.iface)
@@ -216,42 +393,40 @@ def main():
     rx.start()
 
     print("interface %s  source %s" % (args.iface, src.hex(":")))
-    print("frame size %d bytes" % args.size)
+    print("%d iterations of %d frames per size" % (args.iterations, args.count))
 
-    samples, lost = run_latency(
-        lib, handle, rx, src, args.latency_count, args.size, args.timeout
-    )
-    if samples:
-        ordered = sorted(samples)
-        print("")
-        print("round trip over the host stack, microseconds")
-        print("  returned %d of %d" % (len(samples), args.latency_count))
-        print("  min      %.1f" % ordered[0])
-        print("  median   %.1f" % statistics.median(ordered))
-        print("  p99      %.1f" % ordered[min(len(ordered) - 1, int(0.99 * len(ordered)))])
-        print("  max      %.1f" % ordered[-1])
-    else:
-        print("no frames came back, %d lost" % lost)
-
-    got, push, span, wire = run_throughput(
-        lib, handle, rx, src, args.throughput_count, args.size, args.settle
-    )
-    print("")
-    print("throughput")
-    print("  sent      %d frames, host push took %.4f s" % (args.throughput_count, push))
-    print("  returned  %d frames (%.1f percent)" % (got, 100.0 * got / args.throughput_count))
-    if wire is not None:
-        print("  return    %.1f Mb/s measured across %.4f s of returns" % (wire, span))
+    rows = []
+    with serial.Serial(args.serial, args.baud, timeout=2) as port:
+        before = [read_register(port, a) for a in COUNTER_ADDRS]
+        for size in sizes:
+            trials = [
+                one_trial(lib, handle, rx, src, port, args.iface, size, args.count, args.settle)
+                for _ in range(args.iterations)
+            ]
+            best = trials[-1]
+            rows.append({
+                "size": size,
+                "count": sum(t["count"] for t in trials),
+                "min_ns": min(t["min_ns"] for t in trials),
+                "max_ns": max(t["max_ns"] for t in trials),
+                "avg_ns": statistics.fmean([t["avg_ns"] for t in trials]),
+                "rsd": relative_stdev([t["avg_ns"] for t in trials]),
+                "wire_mbps": best["wire_mbps"],
+                "unpaired": sum(t["unpaired"] for t in trials),
+                "stray": sum(t["stray"] for t in trials),
+                "failed": sum(t["failed"] for t in trials),
+                "onwire": sum(t["onwire"] for t in trials),
+                "overflow": sum(t["overflow"] for t in trials),
+            })
+        after = [read_register(port, a) for a in COUNTER_ADDRS]
 
     rx.running = False
+    print_table(rows)
 
-    if args.skip_serial:
-        return
-    with serial.Serial(args.serial, args.baud, timeout=2) as port:
-        print("")
-        print("counters over the serial line, change during this run")
-        for name, addr, was in zip(COUNTER_NAMES, COUNTER_ADDRS, before):
-            print("  %-16s %d" % (name, read_register(port, addr) - was))
+    print("")
+    print("counters over the serial line, change during this run")
+    for name, was, now in zip(COUNTER_NAMES, before, after):
+        print("  %-16s %d" % (name, now - was))
 
 
 if __name__ == "__main__":

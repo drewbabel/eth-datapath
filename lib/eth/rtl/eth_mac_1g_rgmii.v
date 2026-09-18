@@ -97,7 +97,13 @@ module eth_mac_1g_rgmii #
      */
     input  wire [7:0]  cfg_ifg,
     input  wire        cfg_tx_enable,
-    input  wire        cfg_rx_enable
+    input  wire        cfg_rx_enable,
+
+    /*
+     * Frame envelopes
+     */
+    output wire        mon_rx_dv,
+    output wire        mon_tx_en
 );
 
 wire [7:0]  mac_gmii_rxd;
@@ -107,6 +113,9 @@ wire        mac_gmii_tx_clk_en;
 wire [7:0]  mac_gmii_txd;
 wire        mac_gmii_tx_en;
 wire        mac_gmii_tx_er;
+
+assign mon_rx_dv = mac_gmii_rx_dv;
+assign mon_tx_en = mac_gmii_tx_en;
 
 reg [1:0] speed_reg = 2'b10;
 reg mii_select_reg = 1'b0;

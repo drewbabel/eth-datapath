@@ -54,6 +54,12 @@ if {[llength $fwd] > 0} {
   set_multicycle_path 1 -hold  -to $fwd
 }
 
+set async_d [get_pins -quiet -hier -filter {NAME =~ *u_probe/rx_sync_reg[0]/D || NAME =~ *u_probe/tx_sync_reg[0]/D}]
+puts "RESULT probe_sync_pins [llength $async_d]"
+if {[llength $async_d] > 0} {
+  set_false_path -to $async_d
+}
+
 opt_design -directive Explore
 place_design -directive ExtraTimingOpt
 phys_opt_design -directive AggressiveExplore

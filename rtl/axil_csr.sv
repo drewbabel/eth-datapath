@@ -32,7 +32,9 @@ module axil_csr #(
     output logic [  DATA_WIDTH-1:0] s_axi_rdata,
     output logic [             1:0] s_axi_rresp,
     // Upper half reads
-    input  logic [   NumStatus-1:0][DATA_WIDTH-1:0] status
+    input  logic [   NumStatus-1:0][DATA_WIDTH-1:0] status,
+    // Lower half taps
+    output logic [   NumStatus-1:0][DATA_WIDTH-1:0] control
 );
 
   localparam int Lsb = $clog2(DATA_WIDTH / 8);  // Byte lane bits
@@ -41,6 +43,15 @@ module axil_csr #(
   localparam int NumRw = NumRegs / 2;  // Lower half writable
 
   logic [DATA_WIDTH-1:0] regs     [NumRw];
+
+  initial begin
+    for (int i = 0; i < NumRw; i++) regs[i] = '0;
+  end
+
+  for (genvar i = 0; i < NumRw; i++) begin : g_control
+    assign control[i] = regs[i];
+  end
+
 
   logic [  IdxWidth-1:0] wr_index;
   logic [  IdxWidth-1:0] rd_index;

@@ -119,7 +119,13 @@ module eth_mac_1g_rgmii_fifo #
      */
     input  wire [7:0]                 cfg_ifg,
     input  wire                       cfg_tx_enable,
-    input  wire                       cfg_rx_enable
+    input  wire                       cfg_rx_enable,
+
+    /*
+     * Frame envelopes
+     */
+    output wire                       mon_rx_dv,
+    output wire                       mon_tx_en
 );
 
 wire tx_clk;
@@ -248,7 +254,9 @@ eth_mac_1g_rgmii_inst (
     .speed(speed_int),
     .cfg_ifg(cfg_ifg),
     .cfg_tx_enable(cfg_tx_enable),
-    .cfg_rx_enable(cfg_rx_enable)
+    .cfg_rx_enable(cfg_rx_enable),
+    .mon_rx_dv(mon_rx_dv),
+    .mon_tx_en(mon_tx_en)
 );
 
 axis_async_fifo_adapter #(

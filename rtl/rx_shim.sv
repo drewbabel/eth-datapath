@@ -23,7 +23,9 @@ module rx_shim #(
     output logic [DEST_W-1:0] m_tdest,
     // Status
     output logic [      31:0] overflow_cnt,
-    output logic [      31:0] drop_cnt
+    output logic [      31:0] drop_cnt,
+    output logic              retire_valid,
+    output logic              retire_drop
 );
 
   localparam int BAw = $clog2(BUF_DEPTH);
@@ -181,10 +183,25 @@ module rx_shim #(
   assign m_tdest    = c_m_tdest;
   assign drop_cnt   = c_drop_cnt;
 
+  logic over_active;
+
   always_ff @(posedge clk) begin
-    if (!rst_n) overflow_cnt <= '0;
-    else if (rx_axis_tvalid && buf_full) overflow_cnt <= overflow_cnt + 1;
+    if (!rst_n) begin
+      overflow_cnt <= '0;
+      over_active  <= 1'b0;
+    end else begin
+      if (rx_axis_tvalid && buf_full) overflow_cnt <= overflow_cnt + 1;
+      if (rx_axis_tvalid && buf_full) over_active <= 1'b1;
+      else if (rx_axis_tvalid && rx_axis_tlast) over_active <= 1'b0;
+    end
   end
+
+  logic lost_pulse;
+
+  assign lost_pulse = over_active && rx_axis_tvalid && rx_axis_tlast;
+
+  assign retire_valid = frame_done || lost_pulse;
+  assign retire_drop  = drop_pulse || lost_pulse;
 
 endmodule
 
