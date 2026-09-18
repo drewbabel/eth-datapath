@@ -9,7 +9,8 @@ module latency_probe_tb;
   logic rst_n = 1'b0;
   logic rx_ctl = 1'b0;
   logic tx_ctl = 1'b0;
-  logic discard = 1'b0;
+  logic verdict_valid = 1'b0;
+  logic verdict_drop = 1'b0;
   logic clear = 1'b0;
   logic snapshot = 1'b0;
 
@@ -36,7 +37,8 @@ module latency_probe_tb;
       .rst_n(rst_n),
       .rx_ctl(rx_ctl),
       .tx_ctl(tx_ctl),
-      .discard(discard),
+      .verdict_valid(verdict_valid),
+      .verdict_drop(verdict_drop),
       .clear(clear),
       .snapshot(snapshot),
       .stat_min(stat_min),
@@ -89,7 +91,11 @@ module latency_probe_tb;
     repeat (4) @(negedge clk);
     rx_ctl = 1'b0;
     tx_ctl = 1'b1;
-    repeat (lat) @(negedge clk);
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b0;
+    @(negedge clk);
+    verdict_valid = 1'b0;
+    repeat (lat - 1) @(negedge clk);
     tx_ctl = 1'b0;
     exp_q.push_back(cyc - t0);
     repeat (4) @(negedge clk);
@@ -124,9 +130,11 @@ module latency_probe_tb;
 
   task automatic do_discard();
     @(negedge clk);
-    discard = 1'b1;
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b1;
     @(negedge clk);
-    discard = 1'b0;
+    verdict_valid = 1'b0;
+    verdict_drop = 1'b0;
     repeat (4) @(negedge clk);
   endtask  // Automatic
 
@@ -223,6 +231,38 @@ module latency_probe_tb;
     check_stats("burst discard");
   endtask  // Automatic
 
+  task automatic run_inflight_discard();
+    int t0;
+    do_clear();
+    @(negedge clk);
+    rx_ctl = 1'b1;
+    t0 = cyc;
+    repeat (4) @(negedge clk);
+    rx_ctl = 1'b0;
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b0;
+    @(negedge clk);
+    verdict_valid = 1'b0;
+    repeat (3) @(negedge clk);
+    rx_ctl = 1'b1;
+    repeat (4) @(negedge clk);
+    rx_ctl = 1'b0;
+    @(negedge clk);
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b1;
+    @(negedge clk);
+    verdict_valid = 1'b0;
+    verdict_drop = 1'b0;
+    repeat (4) @(negedge clk);
+    tx_ctl = 1'b1;
+    repeat (6) @(negedge clk);
+    tx_ctl = 1'b0;
+    exp_q.push_back(cyc - t0);
+    repeat (8) @(negedge clk);
+    do_snapshot();
+    check_stats("in-flight discard");
+  endtask  // Automatic
+
   task automatic run_collision(input int off);
     int t0;
     do_clear();
@@ -232,7 +272,11 @@ module latency_probe_tb;
     repeat (4) @(negedge clk);
     rx_ctl = 1'b0;
     tx_ctl = 1'b1;
-    repeat (4) @(negedge clk);
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b0;
+    @(negedge clk);
+    verdict_valid = 1'b0;
+    repeat (3) @(negedge clk);
     rx_ctl = 1'b1;
     repeat (4) @(negedge clk);
     rx_ctl = 1'b0;
@@ -240,9 +284,11 @@ module latency_probe_tb;
     tx_ctl = 1'b0;
     exp_q.push_back(cyc - t0);
     repeat (off) @(negedge clk);
-    discard = 1'b1;
+    verdict_valid = 1'b1;
+    verdict_drop = 1'b1;
     @(negedge clk);
-    discard = 1'b0;
+    verdict_valid = 1'b0;
+    verdict_drop = 1'b0;
     repeat (8) @(negedge clk);
     pair(30);
     do_snapshot();
@@ -307,6 +353,8 @@ module latency_probe_tb;
     run_discard_burst();
 
     // Same cycle collision
+    run_inflight_discard();
+
     run_collision(1);
     run_collision(2);
     run_collision(3);
