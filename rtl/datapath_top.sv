@@ -291,7 +291,7 @@ module datapath_top #(
   ) u_probe (
       .clk(clk),
       .rst_n(rst_n),
-      .rx_ctl(mon_rx_dv[0] || gen_tvalid),
+      .rx_ctl(gen_busy ? gen_tvalid : mon_rx_dv[0]),
       .tx_ctl(mon_tx_en[0]),
       .discard(drop_evt[0] || lost_evt[0]),
       .clear(control_w[0][0]),
