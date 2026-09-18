@@ -14,8 +14,8 @@ import serial
 ETH_TYPE = 0x88B5
 BOARD_MAC = bytes.fromhex("020000000000")
 SEQ_OFFSET = 14
-MIN_FRAME = 60
-MAX_FRAME = 1514
+MIN_FRAME = 64
+MAX_FRAME = 1518
 
 COUNTER_NAMES = ["port0 overflow", "port0 drop", "port1 overflow", "port1 drop"]
 COUNTER_ADDRS = [0x40, 0x44, 0x48, 0x4C]
@@ -37,7 +37,7 @@ GEN_COUNT = 0x08
 CMD_START = 0x4
 
 TICK_NS = 8.0
-SWEEP_SIZES = [64, 128, 256, 512, 1024, 1514]
+SWEEP_SIZES = [64, 128, 256, 512, 1024, 1518]
 
 
 class TimeVal(ctypes.Structure):
@@ -172,7 +172,7 @@ def run_throughput(lib, handle, rx, src, count, size, settle):
     rx.first = None
     rx.last = None
     base = rx.count
-    frames = [build_frame(src, 1_000_000 + i, size) for i in range(count)]
+    frames = [build_frame(src, 1_000_000 + i, size - 4) for i in range(count)]
     failed = 0
     start = time.perf_counter()
     for frame in frames:
@@ -225,8 +225,9 @@ def probe_read(port):
 
 
 def run_hwgen(port, size, count, gap):
+    sent_bytes = size - 4
     probe_command(port, CMD_CLEAR)
-    write_register(port, GEN_CFG, (gap << 16) | size)
+    write_register(port, GEN_CFG, (gap << 16) | sent_bytes)
     write_register(port, GEN_COUNT, count)
     probe_command(port, CMD_START)
     deadline = time.time() + 30.0
@@ -236,9 +237,9 @@ def run_hwgen(port, size, count, gap):
     probe_command(port, CMD_SNAPSHOT)
     stats = probe_read(port)
     stats["sent"] = sent
-    stats["offered"] = 1000.0 * size / (size + gap)
-    stats["fps"] = 1e9 / ((size + gap) * 8.0)
-    stats["fps_max"] = 1e9 / ((size + 24) * 8.0)
+    stats["offered"] = 1000.0 * sent_bytes / (sent_bytes + gap)
+    stats["fps"] = 1e9 / ((sent_bytes + gap) * 8.0)
+    stats["fps_max"] = 1e9 / ((size + 20) * 8.0)
     return stats
 
 
@@ -316,7 +317,7 @@ def one_trial(lib, handle, rx, src, port, iface, size, count, settle):
     stats["push_s"] = push
     stats["wire_mbps"] = wire
     stats["failed"] = failed
-    stats["onwire"] = (link_bytes(iface) - out_bytes) // (size + 4)
+    stats["onwire"] = (link_bytes(iface) - out_bytes) // (size - 4)
     return stats
 
 
@@ -346,7 +347,7 @@ def main():
     ap.add_argument("--iface", default="en13", help="host ethernet interface")
     ap.add_argument("--serial", default="/dev/cu.usbserial-AV0JX88M")
     ap.add_argument("--baud", type=int, default=115200)
-    ap.add_argument("--size", type=int, help="single frame size without checksum")
+    ap.add_argument("--size", type=int, help="single frame size with checksum")
     ap.add_argument("--sweep", action="store_true", help="run the standard size sweep")
     ap.add_argument("--hwgen", action="store_true", help="generate frames on the board")
     ap.add_argument("--rfc2544", action="store_true", help="search for the lossless rate")
