@@ -11,6 +11,8 @@ A cut-through gigabit Ethernet switching datapath in SystemVerilog, forwarding b
 - A line-rate frame generator inside the design, which keeps the host out of the traffic path during a measurement.
 - A 32-register control plane reached over a UART to AXI4-Lite bridge.
 
+![Datapath block diagram](docs/datapath_block.svg)
+
 ## Performance
 
 ### Latency
