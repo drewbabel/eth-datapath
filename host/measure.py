@@ -18,7 +18,9 @@ MIN_FRAME = 64
 MAX_FRAME = 1518
 
 COUNTER_NAMES = ["port0 overflow", "port0 drop", "port1 overflow", "port1 drop"]
-COUNTER_ADDRS = [0x40, 0x44, 0x48, 0x4C]
+COUNTER_NAMES += ["port0 queue0 refused", "port0 queue1 refused",
+                  "port1 queue0 refused", "port1 queue1 refused"]
+COUNTER_ADDRS = [0x40, 0x44, 0x48, 0x4C, 0x6C, 0x70, 0x74, 0x78]
 
 CMD_ADDR = 0x00
 CMD_CLEAR = 0x1
