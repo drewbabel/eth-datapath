@@ -1,24 +1,22 @@
 `default_nettype none
 
 module axis_switch #(
-    parameter int WIDTH  = 8,
-    parameter int N_IN   = 2,
-    parameter int N_OUT  = 2,
-    parameter int DEST_W = $clog2(N_OUT)
+    parameter int WIDTH = 8,
+    parameter int N_IN  = 2,
+    parameter int N_OUT = 2
 ) (
-    input  logic                         clk,
-    input  logic                         rst_n,
+    input  logic                                   clk,
+    input  logic                                   rst_n,
     // Slave
-    input  logic [ N_IN-1:0]             s_tvalid,
-    output logic [ N_IN-1:0]             s_tready,
-    input  logic [ N_IN-1:0][ WIDTH-1:0] s_tdata,
-    input  logic [ N_IN-1:0]             s_tlast,
-    input  logic [ N_IN-1:0][DEST_W-1:0] s_tdest,
+    input  logic [ N_IN-1:0][N_OUT-1:0]            s_tvalid,
+    output logic [ N_IN-1:0][N_OUT-1:0]            s_tready,
+    input  logic [ N_IN-1:0][N_OUT-1:0][WIDTH-1:0] s_tdata,
+    input  logic [ N_IN-1:0][N_OUT-1:0]            s_tlast,
     // Master
-    output logic [N_OUT-1:0]             m_tvalid,
-    input  logic [N_OUT-1:0]             m_tready,
-    output logic [N_OUT-1:0][ WIDTH-1:0] m_tdata,
-    output logic [N_OUT-1:0]             m_tlast
+    output logic [N_OUT-1:0]                       m_tvalid,
+    input  logic [N_OUT-1:0]                       m_tready,
+    output logic [N_OUT-1:0][WIDTH-1:0]            m_tdata,
+    output logic [N_OUT-1:0]                       m_tlast
 );
 
   logic [N_OUT-1:0][ N_IN-1:0] req;
@@ -58,8 +56,17 @@ module axis_switch #(
         .m_tlast(m_tlast[i])
     );
 
+    logic [    N_IN-1:0] in_tvalid;
+    logic [N_IN*WIDTH-1:0] in_tdata;
+    logic [    N_IN-1:0] in_tlast;
+
     for (genvar j = 0; j < N_IN; j++) begin : g_in
-      assign req[i][j] = s_tvalid[j] && (s_tdest[j] == i);
+      assign in_tvalid[j] = s_tvalid[j][i];
+      assign in_tdata[j*WIDTH+:WIDTH] = s_tdata[j][i];
+      assign in_tlast[j] = s_tlast[j][i];
+
+      assign req[i][j] = s_tvalid[j][i];
+      assign s_tready[j][i] = grant[i][j] && sk_tready[i];
     end
 
     assign hold[i] = grant_valid[i] && !(sk_tvalid[i] && sk_tready[i] && sk_tlast[i]);
@@ -69,19 +76,13 @@ module axis_switch #(
       sk_tdata[i]  = '0;
       sk_tlast[i]  = 1'b0;
       for (int j = 0; j < N_IN; j++) begin
-        sk_tvalid[i] |= grant[i][j] && s_tvalid[j];
-        sk_tdata[i] |= {WIDTH{grant[i][j]}} & s_tdata[j];
-        sk_tlast[i] |= grant[i][j] && s_tlast[j];
+        sk_tvalid[i] |= grant[i][j] && in_tvalid[j];
+        sk_tdata[i] |= {WIDTH{grant[i][j]}} & in_tdata[j*WIDTH+:WIDTH];
+        sk_tlast[i] |= grant[i][j] && in_tlast[j];
       end
     end
   end
 
-  always_comb begin
-    s_tready = '0;
-    for (int i = 0; i < N_OUT; i++) begin
-      s_tready |= grant[i] & {N_IN{sk_tready[i]}};
-    end
-  end
 `ifdef FORMAL
 
   logic f_past_valid = 1'b0;
@@ -98,55 +99,57 @@ module axis_switch #(
   localparam int GapW = $clog2(MaxSrcGap + MaxReadyGap + 2);
   localparam int WaitW = $clog2(MaxOutWait + 1);
 
-  logic [ N_IN-1:0] f_in_pkt = '0;
   logic [N_OUT-1:0] f_out_pkt = '0;
 
   initial assume (!rst_n);
 
   // Slave port contract
   for (genvar j = 0; j < N_IN; j++) begin : g_fin
-    // Yosys mis-slices past
-    logic [ WIDTH-1:0] f_data_in;
-    logic [DEST_W-1:0] f_dest_in;
-    logic [DEST_W-1:0] f_pkt_dest;
-    logic [ BeatW-1:0] f_beats;
-    logic [  GapW-1:0] f_src_gap;
+    for (genvar i = 0; i < N_OUT; i++) begin : g_fq
+      // Yosys mis-slices past
+      logic [WIDTH-1:0] f_data_in;
+      logic             f_valid_in;
+      logic             f_ready_in;
+      logic             f_last_in;
+      logic [BeatW-1:0] f_beats;
+      logic [ GapW-1:0] f_src_gap;
+      logic             f_in_pkt;
 
-    assign f_data_in = s_tdata[j];
-    assign f_dest_in = s_tdest[j];
+      assign f_data_in  = s_tdata[j][i];
+      assign f_valid_in = s_tvalid[j][i];
+      assign f_ready_in = s_tready[j][i];
+      assign f_last_in  = s_tlast[j][i];
 
-    // Packet in flight
-    always_ff @(posedge clk) begin
-      if (!rst_n) begin
-        f_in_pkt[j] <= 1'b0;
-        f_beats <= '0;
-      end else if (s_tvalid[j] && s_tready[j]) begin
-        f_in_pkt[j] <= !s_tlast[j];
-        f_beats <= s_tlast[j] ? '0 : f_beats + 1;
-        if (!f_in_pkt[j]) f_pkt_dest <= f_dest_in;
+      // Packet in flight
+      always_ff @(posedge clk) begin
+        if (!rst_n) begin
+          f_in_pkt <= 1'b0;
+          f_beats  <= '0;
+        end else if (f_valid_in && f_ready_in) begin
+          f_in_pkt <= !f_last_in;
+          f_beats  <= f_last_in ? '0 : f_beats + 1;
+        end
       end
-    end
 
-    // Source idle run
-    always_ff @(posedge clk) begin
-      if (!rst_n || s_tvalid[j]) f_src_gap <= '0;
-      else if (f_in_pkt[j]) f_src_gap <= f_src_gap + 1;
-    end
-
-    always @(posedge clk) begin
-      if (!rst_n) assume (!s_tvalid[j]);
-      if (rst_n) begin
-        assume (int'(f_beats) < MaxPktBeats);  // Packets end
-        assume (int'(f_src_gap) < MaxSrcGap);  // Sources resume
-        if (f_in_pkt[j] && s_tvalid[j]) assume (f_dest_in == f_pkt_dest);
+      // Source idle run
+      always_ff @(posedge clk) begin
+        if (!rst_n || f_valid_in) f_src_gap <= '0;
+        else if (f_in_pkt) f_src_gap <= f_src_gap + 1;
       end
-      if (f_past_valid) begin
-        if (!$past(rst_n)) assume (!s_tvalid[j]);
-        if ($past(rst_n) && rst_n && $past(s_tvalid[j] && !s_tready[j])) begin
-          assume (s_tvalid[j]);
-          assume (f_data_in == $past(f_data_in));
-          assume (s_tlast[j] == $past(s_tlast[j]));
-          assume (f_dest_in == $past(f_dest_in));
+
+      always @(posedge clk) begin
+        if (!rst_n) assume (!f_valid_in);
+        if (rst_n) begin
+          assume (int'(f_beats) < MaxPktBeats);  // Packets end
+          assume (int'(f_src_gap) < MaxSrcGap);  // Sources resume
+        end
+        if (f_past_valid) begin
+          if (!$past(rst_n)) assume (!f_valid_in);
+          if ($past(rst_n) && rst_n && $past(f_valid_in && !f_ready_in)) begin
+            assume (f_valid_in);
+            assume (f_data_in == $past(f_data_in));
+            assume (f_last_in == $past(f_last_in));
+          end
         end
       end
     end
@@ -199,19 +202,18 @@ module axis_switch #(
 
     // Mux and routing
     for (genvar j = 0; j < N_IN; j++) begin : g_froute
-      logic [DEST_W-1:0] f_route_dest;
-      logic [ WIDTH-1:0] f_route_data;
-      logic [ WIDTH-1:0] f_buf_byte;
+      logic [WIDTH-1:0] f_route_data;
+      logic [WIDTH-1:0] f_buf_byte;
+      logic             f_route_last;
 
-      assign f_route_dest = s_tdest[j];
-      assign f_route_data = s_tdata[j];
+      assign f_route_data = s_tdata[j][i];
+      assign f_route_last = s_tlast[j][i];
       assign f_buf_byte   = sk_tdata[i];
 
       always @(posedge clk) begin
         if (rst_n && sk_tvalid[i] && f_grant[j]) begin
-          assert (int'(f_route_dest) == i);
           assert (f_buf_byte == f_route_data);
-          assert (sk_tlast[i] == s_tlast[j]);
+          assert (sk_tlast[i] == f_route_last);
         end
       end
     end
@@ -255,7 +257,7 @@ module axis_switch #(
   logic f_in_xfer;
   logic f_out_xfer;
 
-  assign f_src_data = s_tdata[f_src];
+  assign f_src_data = s_tdata[f_src][f_dst];
   assign f_buf_data = sk_tdata[f_dst];
   assign f_out_byte = m_tdata[f_dst];
   assign f_from_src = grant[f_dst][f_src];
