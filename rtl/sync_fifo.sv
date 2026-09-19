@@ -4,9 +4,7 @@ module sync_fifo #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 16
 ) (
-`ifdef FORMAL
-    output logic [$clog2(DEPTH+1)-1:0] f_count,
-`endif
+    output logic [$clog2(DEPTH+1)-1:0] count,
     input logic clk,
     input logic rst_n,
     input logic wr_en,
@@ -47,12 +45,7 @@ module sync_fifo #(
 
   assign full  = (wr_ptr[AW] != rd_ptr[AW]) && (wr_addr == rd_addr);
   assign empty = (wr_ptr == rd_ptr);
-
-`ifdef FORMAL
-
-  assign f_count = wr_ptr - rd_ptr;
-
-`endif
+  assign count = wr_ptr - rd_ptr;
 
 endmodule
 

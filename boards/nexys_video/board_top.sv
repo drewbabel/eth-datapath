@@ -140,12 +140,15 @@ module board_top (
       .REGRST(1'b0)
   );
 
-  logic [1:0]      rgmii_rx_clk;
-  logic [1:0][3:0] rgmii_rxd;
-  logic [1:0]      rgmii_rx_ctl;
-  logic [1:0]      rgmii_tx_clk;
-  logic [1:0][3:0] rgmii_txd;
-  logic [1:0]      rgmii_tx_ctl;
+  localparam int NPorts = 2;
+  localparam int PhyPorts = 1;
+
+  logic [NPorts-1:0]      rgmii_rx_clk;
+  logic [NPorts-1:0][3:0] rgmii_rxd;
+  logic [NPorts-1:0]      rgmii_rx_ctl;
+  logic [NPorts-1:0]      rgmii_tx_clk;
+  logic [NPorts-1:0][3:0] rgmii_txd;
+  logic [NPorts-1:0]      rgmii_tx_ctl;
 
   assign rgmii_rx_clk[0] = phy_rx_clk;
   assign rgmii_rxd[0] = phy_rxd_delay;
@@ -154,10 +157,12 @@ module board_top (
   assign phy_txd = rgmii_txd[0];
   assign phy_tx_ctl = rgmii_tx_ctl[0];
 
-  // Second port absent
-  assign rgmii_rx_clk[1] = 1'b0;
-  assign rgmii_rxd[1] = 4'd0;
-  assign rgmii_rx_ctl[1] = 1'b0;
+  // Connectors absent
+  for (genvar i = PhyPorts; i < NPorts; i++) begin : g_no_connector
+    assign rgmii_rx_clk[i] = 1'b0;
+    assign rgmii_rxd[i] = 4'd0;
+    assign rgmii_rx_ctl[i] = 1'b0;
+  end
 
   logic        awvalid;
   logic        awready;
@@ -210,7 +215,8 @@ module board_top (
 
   datapath_top #(
       .TARGET("XILINX"),
-      .PHY_PORTS(1)
+      .N_PORTS(NPorts),
+      .PHY_PORTS(PhyPorts)
   ) u_datapath (
       .clk(clk125),
       .clk90(clk125_90),

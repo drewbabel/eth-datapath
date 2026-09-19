@@ -1,0 +1,36 @@
+[tasks]
+prove
+cover
+prove_d4
+cover_d4
+
+[options]
+prove: mode prove
+prove_d4: mode prove
+cover: mode cover
+cover: depth 40
+cover_d4: mode cover
+cover_d4: depth 40
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+prove_d4: smtbmc z3
+prove_d4: abc pdr
+cover: smtbmc z3
+cover: smtbmc yices
+cover_d4: smtbmc z3
+cover_d4: smtbmc yices
+
+[script]
+read -formal sync_fifo.sv
+read -formal voq.sv
+prove: chparam -set WIDTH 3 -set N_OUT 2 -set DEPTH 8 -set MAX_FRAME 4 voq
+cover: chparam -set WIDTH 3 -set N_OUT 2 -set DEPTH 8 -set MAX_FRAME 4 voq
+prove_d4: chparam -set WIDTH 3 -set N_OUT 4 -set DEPTH 8 -set MAX_FRAME 4 voq
+cover_d4: chparam -set WIDTH 3 -set N_OUT 4 -set DEPTH 8 -set MAX_FRAME 4 voq
+prep -top voq
+
+[files]
+rtl/sync_fifo.sv
+rtl/voq.sv
