@@ -7,6 +7,8 @@ module datapath_top #(
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = {48'h02_00_00_00_00_01, 48'h02_00_00_00_00_00},
     parameter logic [N_ENTRIES*$clog2(N_PORTS)-1:0] MATCH_DEST = 2'b10,
     parameter int CREDIT_DEPTH = 16,
+    parameter int VOQ_DEPTH = 2048,
+    parameter int MAX_FRAME = 1518,
     parameter int PHY_PORTS = 2,
     parameter int PROBE_DEPTH = 16,
     parameter int ADDR_WIDTH = 7
@@ -51,17 +53,18 @@ module datapath_top #(
   localparam int StreamW = DataW + 1;
   localparam int NumCsr = 2 ** (ADDR_WIDTH - 3);
   localparam int ProbeBase = 2 * NPorts;
+  localparam int VoqBase = ProbeBase + 7;
 
   // Port counters
   logic [NPorts-1:0][     31:0] overflow_cnt;
   logic [NPorts-1:0][     31:0] drop_cnt;
 
   // Switch ingress
-  logic [NPorts-1:0]            sw_s_tvalid;
-  logic [NPorts-1:0]            sw_s_tready;
-  logic [NPorts-1:0][StreamW-1:0] sw_s_tdata;
-  logic [NPorts-1:0]            sw_s_tlast;
-  logic [NPorts-1:0][DestW-1:0] sw_s_tdest;
+  logic [NPorts-1:0][NPorts-1:0]              sw_s_tvalid;
+  logic [NPorts-1:0][NPorts-1:0]              sw_s_tready;
+  logic [NPorts-1:0][NPorts-1:0][StreamW-1:0] sw_s_tdata;
+  logic [NPorts-1:0][NPorts-1:0]              sw_s_tlast;
+  logic [NPorts-1:0][NPorts-1:0][      31:0]  voq_drop;
 
   // Switch egress
   logic       gen_tvalid;
@@ -181,6 +184,12 @@ module datapath_top #(
       assign sh_tuser  = rx_tuser;
     end
 
+    logic               rs_tvalid;
+    logic               rs_tready;
+    logic [StreamW-1:0] rs_tdata;
+    logic               rs_tlast;
+    logic [  DestW-1:0] rs_tdest;
+
     rx_shim #(
         .N_ENTRIES(N_ENTRIES),
         .DEST_W(DestW),
@@ -193,15 +202,36 @@ module datapath_top #(
         .rx_axis_tdata(sh_tdata),
         .rx_axis_tlast(sh_tlast),
         .rx_axis_tuser(sh_tuser),
-        .m_tvalid(sw_s_tvalid[i]),
-        .m_tready(sw_s_tready[i]),
-        .m_tdata(sw_s_tdata[i]),
-        .m_tlast(sw_s_tlast[i]),
-        .m_tdest(sw_s_tdest[i]),
+        .m_tvalid(rs_tvalid),
+        .m_tready(rs_tready),
+        .m_tdata(rs_tdata),
+        .m_tlast(rs_tlast),
+        .m_tdest(rs_tdest),
         .overflow_cnt(overflow_cnt[i]),
         .drop_cnt(drop_cnt[i]),
         .retire_valid(retire_valid[i]),
         .retire_drop(retire_drop[i])
+    );
+
+    voq #(
+        .WIDTH(StreamW),
+        .N_OUT(NPorts),
+        .DEST_W(DestW),
+        .DEPTH(VOQ_DEPTH),
+        .MAX_FRAME(MAX_FRAME)
+    ) u_voq (
+        .clk(clk),
+        .rst_n(rst_n),
+        .s_tvalid(rs_tvalid),
+        .s_tready(rs_tready),
+        .s_tdata(rs_tdata),
+        .s_tlast(rs_tlast),
+        .s_tdest(rs_tdest),
+        .m_tvalid(sw_s_tvalid[i]),
+        .m_tready(sw_s_tready[i]),
+        .m_tdata(sw_s_tdata[i]),
+        .m_tlast(sw_s_tlast[i]),
+        .drop_cnt(voq_drop[i])
     );
 
     // Last rides data
@@ -247,10 +277,9 @@ module datapath_top #(
   end
 
   axis_switch #(
-      .WIDTH (StreamW),
-      .N_IN  (NPorts),
-      .N_OUT (NPorts),
-      .DEST_W(DestW)
+      .WIDTH(StreamW),
+      .N_IN (NPorts),
+      .N_OUT(NPorts)
   ) u_switch (
       .clk(clk),
       .rst_n(rst_n),
@@ -258,7 +287,6 @@ module datapath_top #(
       .s_tready(sw_s_tready),
       .s_tdata(sw_s_tdata),
       .s_tlast(sw_s_tlast),
-      .s_tdest(sw_s_tdest),
       .m_tvalid(sw_m_tvalid),
       .m_tready(sw_m_tready),
       .m_tdata(sw_m_tdata),
@@ -323,7 +351,13 @@ module datapath_top #(
   assign status_w[ProbeBase+5] = probe_error;
   assign status_w[ProbeBase+6] = gen_sent;
 
-  for (genvar i = ProbeBase + 7; i < NumCsr; i++) begin : g_spare
+  for (genvar i = 0; i < NPorts; i++) begin : g_voq_status
+    for (genvar d = 0; d < NPorts; d++) begin : g_voq_dest
+      assign status_w[VoqBase+i*NPorts+d] = voq_drop[i][d];
+    end
+  end
+
+  for (genvar i = VoqBase + NPorts * NPorts; i < NumCsr; i++) begin : g_spare
     assign status_w[i] = 32'd0;
   end
 
