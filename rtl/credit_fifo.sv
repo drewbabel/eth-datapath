@@ -22,17 +22,13 @@ module credit_fifo #(
   logic             full;
   logic             empty;
   logic             out_valid;
-`ifdef FORMAL
   logic [$clog2(DEPTH+1)-1:0] fifo_count;
-`endif
 
   sync_fifo #(
       .WIDTH(WIDTH),
       .DEPTH(DEPTH)
   ) u_fifo (
-`ifdef FORMAL
-      .f_count(fifo_count),
-`endif
+      .count(fifo_count),
       .clk(clk),
       .rst_n(rst_n),
       .wr_en(rx_valid),

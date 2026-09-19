@@ -83,10 +83,8 @@ module classifier #(
   logic                                 send_end;
   logic                                 drain_end;
 
-`ifdef FORMAL
   logic [$clog2(MetaDepth+1)-1:0] f_meta_count;
   logic [ $clog2(BufDepth+1)-1:0] f_data_count;
-`endif
 
   assign s_xfer       = s_tvalid && s_tready;
   assign m_xfer       = m_tvalid && m_tready;
@@ -146,9 +144,7 @@ module classifier #(
       .WIDTH(DEST_W + 1),
       .DEPTH(MetaDepth)
   ) u_meta (
-`ifdef FORMAL
-      .f_count(f_meta_count),
-`endif
+      .count(f_meta_count),
       .clk(clk),
       .rst_n(rst_n),
       .wr_en(meta_wr_en && !bypass),
@@ -192,9 +188,7 @@ module classifier #(
       .WIDTH($bits(s_tdata) + $bits(s_tlast)),
       .DEPTH(BufDepth)
   ) u_data (
-`ifdef FORMAL
-      .f_count(f_data_count),
-`endif
+      .count(f_data_count),
       .clk(clk),
       .rst_n(rst_n),
       .wr_en(s_xfer),
