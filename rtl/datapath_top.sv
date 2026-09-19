@@ -2,9 +2,10 @@
 
 module datapath_top #(
     parameter string TARGET = "GENERIC",
+    parameter int N_PORTS = 2,
     parameter int N_ENTRIES = 2,
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = {48'h02_00_00_00_00_01, 48'h02_00_00_00_00_00},
-    parameter logic [N_ENTRIES-1:0] MATCH_DEST = 2'b10,
+    parameter logic [N_ENTRIES*$clog2(N_PORTS)-1:0] MATCH_DEST = 2'b10,
     parameter int CREDIT_DEPTH = 16,
     parameter int PHY_PORTS = 2,
     parameter int PROBE_DEPTH = 16,
@@ -15,12 +16,12 @@ module datapath_top #(
     input logic rst_n,
 
     // RGMII pins
-    input  logic [1:0]      rgmii_rx_clk,
-    input  logic [1:0][3:0] rgmii_rxd,
-    input  logic [1:0]      rgmii_rx_ctl,
-    output logic [1:0]      rgmii_tx_clk,
-    output logic [1:0][3:0] rgmii_txd,
-    output logic [1:0]      rgmii_tx_ctl,
+    input  logic [N_PORTS-1:0]      rgmii_rx_clk,
+    input  logic [N_PORTS-1:0][3:0] rgmii_rxd,
+    input  logic [N_PORTS-1:0]      rgmii_rx_ctl,
+    output logic [N_PORTS-1:0]      rgmii_tx_clk,
+    output logic [N_PORTS-1:0][3:0] rgmii_txd,
+    output logic [N_PORTS-1:0]      rgmii_tx_ctl,
 
     // Control plane
     input  logic        s_axi_awvalid,
@@ -44,9 +45,12 @@ module datapath_top #(
     output logic [ 1:0] s_axi_rresp
 );
 
-  localparam int NPorts = 2;
-  localparam int DestW = 1;
+  localparam int NPorts = N_PORTS;
+  localparam int DestW = $clog2(N_PORTS);
+  localparam int DataW = 8;
+  localparam int StreamW = DataW + 1;
   localparam int NumCsr = 2 ** (ADDR_WIDTH - 3);
+  localparam int ProbeBase = 2 * NPorts;
 
   // Port counters
   logic [NPorts-1:0][     31:0] overflow_cnt;
@@ -55,7 +59,7 @@ module datapath_top #(
   // Switch ingress
   logic [NPorts-1:0]            sw_s_tvalid;
   logic [NPorts-1:0]            sw_s_tready;
-  logic [NPorts-1:0][      8:0] sw_s_tdata;
+  logic [NPorts-1:0][StreamW-1:0] sw_s_tdata;
   logic [NPorts-1:0]            sw_s_tlast;
   logic [NPorts-1:0][DestW-1:0] sw_s_tdest;
 
@@ -73,7 +77,7 @@ module datapath_top #(
 
   logic [NPorts-1:0]            sw_m_tvalid;
   logic [NPorts-1:0]            sw_m_tready;
-  logic [NPorts-1:0][      8:0] sw_m_tdata;
+  logic [NPorts-1:0][StreamW-1:0] sw_m_tdata;
   logic [NPorts-1:0]            sw_m_tlast;
 
   for (genvar i = 0; i < NPorts; i++) begin : g_port
@@ -90,11 +94,11 @@ module datapath_top #(
 
     // Credit link
     logic       link_valid;
-    logic [9:0] link_data;
+    logic [StreamW:0] link_data;
     logic       credit_return;
     logic       q_valid;
     logic       q_ready;
-    logic [9:0] q_data;
+    logic [StreamW:0] q_data;
 
     if (i < PHY_PORTS) begin : g_phy
       eth_mac_1g_rgmii_fifo #(
@@ -202,7 +206,7 @@ module datapath_top #(
 
     // Last rides data
     credit_sender #(
-        .WIDTH(10),
+        .WIDTH(StreamW + 1),
         .DEPTH(CREDIT_DEPTH)
     ) u_sender (
         .clk(clk),
@@ -216,7 +220,7 @@ module datapath_top #(
     );
 
     credit_fifo #(
-        .WIDTH(10),
+        .WIDTH(StreamW + 1),
         .DEPTH(CREDIT_DEPTH)
     ) u_fifo (
         .clk(clk),
@@ -232,8 +236,8 @@ module datapath_top #(
     tx_shim u_tx_shim (
         .s_tvalid(q_valid),
         .s_tready(q_ready),
-        .s_tdata(q_data[8:0]),
-        .s_tlast(q_data[9]),
+        .s_tdata(q_data[StreamW-1:0]),
+        .s_tlast(q_data[StreamW]),
         .tx_axis_tdata(tx_tdata),
         .tx_axis_tvalid(tx_tvalid),
         .tx_axis_tready(tx_tready),
@@ -243,7 +247,7 @@ module datapath_top #(
   end
 
   axis_switch #(
-      .WIDTH (9),
+      .WIDTH (StreamW),
       .N_IN  (NPorts),
       .N_OUT (NPorts),
       .DEST_W(DestW)
@@ -306,19 +310,20 @@ module datapath_top #(
       .stat_error(probe_error)
   );
 
-  assign status_w[0] = overflow_cnt[0];
-  assign status_w[1] = drop_cnt[0];
-  assign status_w[2] = overflow_cnt[1];
-  assign status_w[3] = drop_cnt[1];
-  assign status_w[4] = probe_min;
-  assign status_w[5] = probe_max;
-  assign status_w[6] = probe_count;
-  assign status_w[7] = probe_sum_lo;
-  assign status_w[8] = probe_sum_hi;
-  assign status_w[9] = probe_error;
-  assign status_w[10] = gen_sent;
+  for (genvar i = 0; i < NPorts; i++) begin : g_port_status
+    assign status_w[2*i]   = overflow_cnt[i];
+    assign status_w[2*i+1] = drop_cnt[i];
+  end
 
-  for (genvar i = 11; i < NumCsr; i++) begin : g_spare
+  assign status_w[ProbeBase+0] = probe_min;
+  assign status_w[ProbeBase+1] = probe_max;
+  assign status_w[ProbeBase+2] = probe_count;
+  assign status_w[ProbeBase+3] = probe_sum_lo;
+  assign status_w[ProbeBase+4] = probe_sum_hi;
+  assign status_w[ProbeBase+5] = probe_error;
+  assign status_w[ProbeBase+6] = gen_sent;
+
+  for (genvar i = ProbeBase + 7; i < NumCsr; i++) begin : g_spare
     assign status_w[i] = 32'd0;
   end
 
