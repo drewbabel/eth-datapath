@@ -213,14 +213,13 @@ module frame_gen_tb;
 
     $display("checks passed %0d failed %0d", pass_count, fail_count);
     if (fail_count == 0) $display("PASS");
-    else $display("FAIL");
+    else $fatal(1, "FAIL");
     $finish;
   end
 
   initial begin
     #5_000_000;
-    $display("FAIL timeout");
-    $finish;
+    $fatal(1, "FAIL timeout");
   end
 
 endmodule
