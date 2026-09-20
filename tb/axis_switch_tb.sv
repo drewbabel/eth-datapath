@@ -1,73 +1,70 @@
 `default_nettype none
 
-module axis_switch_tb ();
+module axis_switch_harness #(
+    parameter int WIDTH   = 8,
+    parameter int NIN     = 2,
+    parameter int NOUT    = 2,
+    parameter int PKT_LEN = 4,
+    parameter int FRAMES  = 8,
+    parameter int QDEPTH  = 256,
+    parameter int FLOOR   = 700
+) (
+    input  logic clk,
+    input  logic rst_n,
+    input  logic stall_en,
+    output int   checks,
+    output int   errors,
+    output logic done
+);
 
-  int checks = 0;
-  int errors = 0;
+  localparam int SelW = $clog2(NOUT);
 
-  localparam int Width = 8;
-  localparam int NIn = 2;
-  localparam int NOut = 2;
-  localparam int PktLen = 4;
-  localparam int QDepth = 1024;
+  logic [  NIN-1:0]             s_tvalid;
+  logic [  NIN-1:0]             s_tready;
+  logic [  NIN-1:0][WIDTH-1:0]  s_tdata;
+  logic [  NIN-1:0]             s_tlast;
+  logic [  NIN-1:0][ NOUT-1:0]  s_navail;
+  logic [  NIN-1:0][ SelW-1:0]  s_sel;
+  logic [  NIN-1:0]             s_sel_valid;
+  logic [ NOUT-1:0]             m_tvalid;
+  logic [ NOUT-1:0]             m_tready;
+  logic [ NOUT-1:0][WIDTH-1:0]  m_tdata;
+  logic [ NOUT-1:0]             m_tlast;
 
-  logic clk = 1'b0;
-  logic rst_n = 1'b1;
-  logic [NIn-1:0][NOut-1:0] s_tvalid;
-  logic [NIn-1:0][NOut-1:0] s_tready;
-  logic [NIn-1:0][NOut-1:0][Width-1:0] s_tdata;
-  logic [NIn-1:0][NOut-1:0] s_tlast;
-  logic [NOut-1:0] m_tvalid;
-  logic [NOut-1:0] m_tready = '0;
-  logic [NOut-1:0][Width-1:0] m_tdata;
-  logic [NOut-1:0] m_tlast;
+  // Source rings
+  logic [WIDTH-1:0] q_data[NIN][NOUT][QDEPTH];
+  logic             q_last[NIN][NOUT][QDEPTH];
+  int               q_head[NIN][NOUT];
+  int               q_tail[NIN][NOUT];
 
-  // Stream drive shadows
-  logic tv[NIn][NOut];
-  logic tr[NIn][NOut];
-  logic [Width-1:0] td[NIn][NOut];
-  logic tl[NIn][NOut];
+  int  sent_frames[NIN][NOUT];
+  int  got_frames[NIN][NOUT];
+  int  exp_seq[NIN][NOUT];
+  int  mark[NIN][NOUT];
+  int  beats_in[NOUT];
+  int  src_in[NOUT];
+  logic pkt_open[NOUT];
+  logic [NOUT-1:0] ready_drv;
+  int  total_sent = 0;
+  int  total_got = 0;
+  int  sel_i;
+  logic stall_on = 1'b0;
+  logic meas_on = 1'b0;
+  int   meas_beats = 0;
+  int   meas_cycles = 0;
+  int   meas_add;
+  logic [WIDTH-1:0] beat;
+  int  src;
+  int  dst;
+  int  seq;
 
-  logic gap_en = 1'b0;
-  logic stall_en = 1'b0;
-  logic send_mask[NIn][NOut];
-  logic s_taken[NIn][NOut];
-  int beat[NIn][NOut];
-  int seq[NIn][NOut];
-  int sent = 0;
-  int rcvd = 0;
-
-  // Per flow rings
-  logic [Width-1:0] q_data[NIn][NOut][QDepth];
-  logic q_last[NIn][NOut][QDepth];
-  int q_head[NIn][NOut];
-  int q_tail[NIn][NOut];
-  int got[NIn][NOut];
-  int mark[NIn][NOut];
-
-  logic pkt_open[NOut];
-  int cur_src[NOut];
-
-  logic [NOut-1:0] reg_m_tvalid;
-  logic [NOut-1:0][Width-1:0] reg_m_tdata;
-  logic [NOut-1:0] reg_m_tlast;
-  logic [NOut-1:0] reg_m_xfer;
-
-  always #5 clk = ~clk;
-
-  for (genvar j = 0; j < NIn; j++) begin : g_bind
-    for (genvar i = 0; i < NOut; i++) begin : g_stream
-      assign s_tvalid[j][i] = tv[j][i];
-      assign s_tdata[j][i]  = td[j][i];
-      assign s_tlast[j][i]  = tl[j][i];
-      assign tr[j][i]       = s_tready[j][i];
-    end
-  end
+  assign m_tready = ready_drv;
 
   axis_switch #(
-      .WIDTH(Width),
-      .N_IN (NIn),
-      .N_OUT(NOut)
+      .WIDTH(WIDTH),
+      .N_IN (NIN),
+      .N_OUT(NOUT),
+      .SEL_W(SelW)
   ) dut (
       .clk(clk),
       .rst_n(rst_n),
@@ -75,291 +72,270 @@ module axis_switch_tb ();
       .s_tready(s_tready),
       .s_tdata(s_tdata),
       .s_tlast(s_tlast),
+      .s_navail(s_navail),
+      .s_sel(s_sel),
+      .s_sel_valid(s_sel_valid),
       .m_tvalid(m_tvalid),
       .m_tready(m_tready),
       .m_tdata(m_tdata),
       .m_tlast(m_tlast)
   );
 
-  task automatic mark_progress();
-    for (int j = 0; j < NIn; j++) for (int i = 0; i < NOut; i++) mark[j][i] = got[j][i];
-  endtask  // Automatic
+  // Queue non empty
+  for (genvar j = 0; j < NIN; j++) begin : g_avail
+    for (genvar i = 0; i < NOUT; i++) begin : g_bit
+      assign s_navail[j][i] = (q_head[j][i] != q_tail[j][i]);
+    end
+  end
 
-  task automatic check_progress(input string name);
-    for (int j = 0; j < NIn; j++) begin
-      for (int i = 0; i < NOut; i++) begin
-        if (send_mask[j][i]) begin
+  // Paired queue serves
+  always_comb begin
+    for (int j = 0; j < NIN; j++) begin
+      sel_i = int'(s_sel[j]);
+      s_tvalid[j] = s_sel_valid[j] && (q_head[j][sel_i] != q_tail[j][sel_i]);
+      s_tdata[j]  = q_data[j][sel_i][q_head[j][sel_i]];
+      s_tlast[j]  = q_last[j][sel_i][q_head[j][sel_i]];
+    end
+  end
+
+  always @(posedge clk) begin
+    if (rst_n) begin
+      for (int j = 0; j < NIN; j++) begin
+        if (s_tvalid[j] && s_tready[j])
+          q_head[j][int'(s_sel[j])] <= (q_head[j][int'(s_sel[j])] + 1) % QDEPTH;
+      end
+    end
+  end
+
+  // Backpressure driver
+  always @(posedge clk) begin
+    if (!rst_n) ready_drv <= '1;
+    else if (stall_en || stall_on) ready_drv <= NOUT'($urandom);
+    else ready_drv <= '1;
+  end
+
+  task automatic push_frame(int j, int i, int seq);
+    for (int b = 0; b < PKT_LEN; b++) begin
+      q_data[j][i][q_tail[j][i]] = WIDTH'((j << 6) | (i << 4) | (seq % 16));
+      q_last[j][i][q_tail[j][i]] = (b == PKT_LEN - 1);
+      q_tail[j][i] = (q_tail[j][i] + 1) % QDEPTH;
+    end
+    sent_frames[j][i]++;
+    total_sent++;
+  endtask
+
+  task automatic load_all(int count);
+    for (int j = 0; j < NIN; j++)
+      for (int i = 0; i < NOUT; i++)
+        for (int f = 0; f < count; f++) push_frame(j, i, sent_frames[j][i]);
+  endtask
+
+  task automatic fail(string msg);
+    errors++;
+    $display("FAIL %0dx%0d %s at %0t", NIN, NOUT, msg, $time);
+  endtask
+
+  // Output monitor
+  always @(negedge clk) begin
+    if (rst_n) begin
+      for (int i = 0; i < NOUT; i++) begin
+        if (m_tvalid[i] && m_tready[i]) begin
+          beat = m_tdata[i];
+          src  = int'(beat[7:6]);
+          dst  = int'(beat[5:4]);
+          seq  = int'(beat[3:0]);
           checks++;
-          if (got[j][i] == mark[j][i]) begin
-            errors++;
-            $error("%s flow %0d to %0d stalled out", name, j, i);
+          if (dst != i) fail($sformatf("beat routed to %0d wanted %0d", i, dst));
+          if (!pkt_open[i]) begin
+            pkt_open[i] = 1'b1;
+            src_in[i]   = src;
+            beats_in[i] = 0;
           end
-        end
-      end
-    end
-  endtask  // Automatic
-
-  task automatic set_mask(input logic all_on, input int only_dest);
-    for (int j = 0; j < NIn; j++) begin
-      for (int i = 0; i < NOut; i++) begin
-        send_mask[j][i] = all_on || (i == only_dest);
-      end
-    end
-  endtask  // Automatic
-
-  task automatic do_reset();
-    rst_n = 1'b0;
-    m_tready = '0;
-    gap_en = 1'b0;
-    stall_en = 1'b0;
-    sent = 0;
-    rcvd = 0;
-    for (int i = 0; i < NOut; i++) begin
-      pkt_open[i] = 1'b0;
-      cur_src[i]  = 0;
-    end
-    for (int j = 0; j < NIn; j++) begin
-      for (int i = 0; i < NOut; i++) begin
-        send_mask[j][i] = 1'b0;
-        s_taken[j][i]   = 1'b0;
-        tv[j][i]        = 1'b0;
-        td[j][i]        = '0;
-        tl[j][i]        = 1'b0;
-        beat[j][i]      = 0;
-        seq[j][i]       = 0;
-        q_head[j][i]    = 0;
-        q_tail[j][i]    = 0;
-        got[j][i]       = 0;
-      end
-    end
-    @(posedge clk);
-    #1 rst_n = 1'b1;
-    @(posedge clk);
-  endtask  // Automatic
-
-  task automatic do_verdict();
-    @(posedge clk);
-    if (errors == 0) begin
-      $display("PASS: %0d checks, %0d mismatches", checks, errors);
-    end else begin
-      $fatal(1, "FAIL: %0d mismatches, %0d checks", errors, checks);
-    end
-    $finish;
-  endtask  // Automatic
-
-  task automatic check_bit(input string name, input logic got_v, input logic exp);
-    checks++;
-    if (got_v !== exp) begin
-      errors++;
-      $error("t=%0t %s mismatch: got=%b exp=%b", $time, name, got_v, exp);
-    end
-  endtask  // Automatic
-
-  task automatic check_int(input string name, input int got_v, input int exp);
-    checks++;
-    if (got_v !== exp) begin
-      errors++;
-      $error("t=%0t %s mismatch: got=%0d exp=%0d", $time, name, got_v, exp);
-    end
-  endtask  // Automatic
-
-  task automatic check_data(input string name, input logic [Width-1:0] got_v,
-                            input logic [Width-1:0] exp);
-    checks++;
-    if (got_v !== exp) begin
-      errors++;
-      $error("t=%0t %s mismatch: got=%h exp=%h", $time, name, got_v, exp);
-    end
-  endtask  // Automatic
-
-  task automatic idle(input int cycles);
-    repeat (cycles) @(posedge clk);
-  endtask  // Automatic
-
-  // Hold until taken
-  always @(posedge clk) begin
-    if (!rst_n) begin
-      for (int j = 0; j < NIn; j++) begin
-        for (int i = 0; i < NOut; i++) begin
-          tv[j][i] = 1'b0;
-          td[j][i] = '0;
-          tl[j][i] = 1'b0;
-        end
-      end
-    end else begin
-      #1;
-      for (int j = 0; j < NIn; j++) begin
-        for (int i = 0; i < NOut; i++) begin
-          if (!tv[j][i] || s_taken[j][i]) begin
-            if (send_mask[j][i] && (!gap_en || 1'($urandom))) begin
-              tv[j][i]   = 1'b1;
-              td[j][i]   = {(1)'(j), (Width - 1)'(seq[j][i])};
-              tl[j][i]   = (beat[j][i] == PktLen - 1);
-              seq[j][i]  = seq[j][i] + 1;
-              beat[j][i] = tl[j][i] ? 0 : beat[j][i] + 1;
-            end else begin
-              // Idle payload garbage
-              tv[j][i] = 1'b0;
-              td[j][i] = (Width)'($urandom);
-              tl[j][i] = 1'($urandom);
-            end
+          checks++;
+          if (src != src_in[i]) fail($sformatf("output %0d mixed sources", i));
+          checks++;
+          if (seq != (exp_seq[src][i] % 16)) fail($sformatf("flow %0d to %0d out of order", src, i));
+          beats_in[i]++;
+          if (m_tlast[i]) begin
+            checks++;
+            if (beats_in[i] != PKT_LEN) fail($sformatf("output %0d frame length %0d", i, beats_in[i]));
+            exp_seq[src][i]++;
+            got_frames[src][i]++;
+            total_got++;
+            pkt_open[i] = 1'b0;
           end
         end
       end
     end
   end
 
+  // Throughput window
   always @(posedge clk) begin
-    if (!rst_n) m_tready = '0;
-    else begin
-      #1;
-      for (int i = 0; i < NOut; i++) m_tready[i] = stall_en ? 1'($urandom) : 1'b1;
+    if (rst_n && meas_on) begin
+      meas_add = 0;
+      for (int i = 0; i < NOUT; i++) if (m_tvalid[i] && m_tready[i]) meas_add = meas_add + 1;
+      meas_beats  <= meas_beats + meas_add;
+      meas_cycles <= meas_cycles + 1;
     end
   end
 
-  // Enqueue per flow
-  always @(posedge clk) begin
-    for (int j = 0; j < NIn; j++) begin
-      for (int i = 0; i < NOut; i++) begin
-        s_taken[j][i] <= rst_n && tv[j][i] && tr[j][i];
-        if (rst_n && tv[j][i] && tr[j][i]) begin
-          q_data[j][i][q_tail[j][i]%QDepth] = td[j][i];
-          q_last[j][i][q_tail[j][i]%QDepth] = tl[j][i];
-          q_tail[j][i] = q_tail[j][i] + 1;
-          sent = sent + 1;
-        end
+  task automatic mark_progress();
+    for (int j = 0; j < NIN; j++) for (int i = 0; i < NOUT; i++) mark[j][i] = got_frames[j][i];
+  endtask
+
+  task automatic check_progress(string name);
+    for (int j = 0; j < NIN; j++) begin
+      for (int i = 0; i < NOUT; i++) begin
+        checks++;
+        if (got_frames[j][i] == mark[j][i]) fail($sformatf("%s flow %0d to %0d starved", name, j, i));
       end
     end
+  endtask
+
+  task automatic run_until_drained(int limit);
+    int spent;
+    spent = 0;
+    while (total_got < total_sent && spent < limit) begin
+      @(posedge clk);
+      spent++;
+    end
+    checks++;
+    if (total_got != total_sent)
+      fail($sformatf("drained %0d of %0d frames", total_got, total_sent));
+  endtask
+
+  initial begin
+    checks = 0;
+    errors = 0;
+    done   = 1'b0;
+    for (int j = 0; j < NIN; j++) begin
+      for (int i = 0; i < NOUT; i++) begin
+        q_head[j][i] = 0;
+        q_tail[j][i] = 0;
+        sent_frames[j][i] = 0;
+        got_frames[j][i] = 0;
+        exp_seq[j][i] = 0;
+        mark[j][i] = 0;
+      end
+    end
+    for (int i = 0; i < NOUT; i++) pkt_open[i] = 1'b0;
+
+    wait (rst_n);
+    repeat (4) @(posedge clk);
+
+    load_all(FRAMES);
+    mark_progress();
+    repeat (10 * NIN * NOUT * PKT_LEN) @(posedge clk);
+    check_progress("full load");
+    run_until_drained(200 * NIN * NOUT * PKT_LEN * FRAMES);
+
+    load_all(40);
+    meas_on = 1'b1;
+    repeat (400) @(posedge clk);
+    meas_on = 1'b0;
+    $display("THROUGHPUT %0dx%0d %0d beats in %0d cycles per output %0d permille", NIN, NOUT,
+             meas_beats, meas_cycles, (1000 * meas_beats) / (meas_cycles * NOUT));
+    checks++;
+    if ((1000 * meas_beats) / (meas_cycles * NOUT) < FLOOR)
+      fail($sformatf("throughput %0d permille per output", (1000*meas_beats)/(meas_cycles*NOUT)));
+    run_until_drained(400 * NIN * NOUT * PKT_LEN * 40);
+
+    stall_on = 1'b1;
+    load_all(FRAMES);
+    mark_progress();
+    repeat (40 * NIN * NOUT * PKT_LEN) @(posedge clk);
+    check_progress("under backpressure");
+    run_until_drained(400 * NIN * NOUT * PKT_LEN * FRAMES);
+    stall_on = 1'b0;
+
+    done = 1'b1;
   end
+
+endmodule
+
+module axis_switch_tb ();
+
+  logic clk = 1'b0;
+  logic rst_n = 1'b0;
+  logic stall_en = 1'b0;
+
+  int   checks2;
+  int   errors2;
+  logic done2;
+  int   checks4;
+  int   errors4;
+  logic done4;
+  int   checks1;
+  int   errors1;
+  logic done1;
+
+  always #5 clk = ~clk;
+
+  axis_switch_harness #(
+      .WIDTH(8),
+      .NIN  (2),
+      .NOUT (2)
+  ) h2 (
+      .clk(clk),
+      .rst_n(rst_n),
+      .stall_en(stall_en),
+      .checks(checks2),
+      .errors(errors2),
+      .done(done2)
+  );
+
+  axis_switch_harness #(
+      .WIDTH(8),
+      .NIN  (4),
+      .NOUT (4)
+  ) h4 (
+      .clk(clk),
+      .rst_n(rst_n),
+      .stall_en(stall_en),
+      .checks(checks4),
+      .errors(errors4),
+      .done(done4)
+  );
+
+  axis_switch_harness #(
+      .WIDTH(8),
+      .NIN  (4),
+      .NOUT (4),
+      .PKT_LEN(1),
+      .FLOOR(390)
+  ) h1 (
+      .clk(clk),
+      .rst_n(rst_n),
+      .stall_en(stall_en),
+      .checks(checks1),
+      .errors(errors1),
+      .done(done1)
+  );
 
   initial begin
     $dumpfile("tb.vcd");
-    $dumpvars(0, axis_switch_tb);
-    do_reset();
+    $dumpvars(0, axis_switch_tb.h2.dut);
+    $dumpvars(0, axis_switch_tb.h4.dut);
+    $dumpvars(0, axis_switch_tb.h1.dut);
 
-    // Free running
-    set_mask(1'b1, 0);
-    mark_progress();
-    idle(100);
-    check_progress("free");
+    repeat (4) @(posedge clk);
+    rst_n = 1'b1;
 
-    // Forced contention
-    for (int d = 0; d < NOut; d++) begin
-      set_mask(1'b0, d);
-      mark_progress();
-      idle(200);
-      check_progress($sformatf("dest %0d only", d));
-    end
+    wait (done2 && done4 && done1);
 
-    // Contention under backpressure
     stall_en = 1'b1;
-    for (int d = 0; d < NOut; d++) begin
-      set_mask(1'b0, d);
-      mark_progress();
-      idle(300);
-      check_progress($sformatf("dest %0d stalled", d));
-    end
-
-    // Full grid
-    set_mask(1'b1, 0);
-    mark_progress();
-    idle(400);
-    check_progress("grid");
-
-    // Source gaps
-    gap_en = 1'b1;
-    mark_progress();
-    idle(400);
-    check_progress("gaps");
-
-    // Drain
-    for (int j = 0; j < NIn; j++) for (int i = 0; i < NOut; i++) send_mask[j][i] = 1'b0;
-    gap_en   = 1'b0;
+    repeat (2000) @(posedge clk);
     stall_en = 1'b0;
-    idle(40);
+    repeat (2000) @(posedge clk);
 
-    check_int("beats out", rcvd, sent);
-    for (int j = 0; j < NIn; j++) begin
-      for (int i = 0; i < NOut; i++) begin
-        check_int($sformatf("flow %0d to %0d drained", j, i), q_tail[j][i] - q_head[j][i], 0);
-        if (got[j][i] == 0) begin
-          checks++;
-          errors++;
-          $error("flow %0d to %0d never carried a beat", j, i);
-        end
-      end
+    if (errors2 == 0 && errors4 == 0 && errors1 == 0)
+      $display("PASS axis_switch_tb: %0d checks", checks2 + checks4 + checks1);
+    else begin
+      $display("FAIL axis_switch_tb: %0d errors of %0d checks", errors2 + errors4 + errors1,
+               checks2 + checks4 + checks1);
+      $fatal(1);
     end
-
-    do_verdict();
-  end
-
-  // Watchdog
-  initial begin
-    #200_000_000 $fatal(1, "TIMEOUT: sim exceeded max time");
-  end
-
-  // Reference model
-  always @(posedge clk) begin
-    if (!rst_n) begin
-      reg_m_tvalid <= '0;
-      reg_m_tdata  <= '0;
-      reg_m_tlast  <= '0;
-      reg_m_xfer   <= '0;
-    end else begin
-      reg_m_tvalid <= m_tvalid;
-      reg_m_tdata  <= m_tdata;
-      reg_m_tlast  <= m_tlast;
-      for (int i = 0; i < NOut; i++) reg_m_xfer[i] <= m_tvalid[i] && m_tready[i];
-    end
-  end
-
-  // Compare against DUT
-  always @(negedge clk) begin
-    int src;
-    logic [Width-1:0] out_data;
-    for (int i = 0; i < NOut; i++) begin
-      if (rst_n && m_tvalid[i] && m_tready[i]) begin
-        out_data = m_tdata[i];
-        src = int'(out_data[Width-1]);
-        if (q_head[src][i] == q_tail[src][i]) begin
-          checks++;
-          errors++;
-          $error("t=%0t output %0d beat with nothing sent", $time, i);
-        end else begin
-          check_data($sformatf("out %0d tdata", i), m_tdata[i],
-                     q_data[src][i][q_head[src][i]%QDepth]);
-          check_bit($sformatf("out %0d tlast", i), m_tlast[i],
-                    q_last[src][i][q_head[src][i]%QDepth]);
-          q_head[src][i] = q_head[src][i] + 1;
-        end
-        if (pkt_open[i]) check_int($sformatf("out %0d packet source", i), src, cur_src[i]);
-        else cur_src[i] = src;
-        pkt_open[i] = !m_tlast[i];
-        got[src][i] = got[src][i] + 1;
-        rcvd = rcvd + 1;
-      end
-    end
-  end
-
-  always @(negedge clk) begin
-    for (int i = 0; i < NOut; i++) begin
-      if (reg_m_tvalid[i] && !reg_m_xfer[i]) begin
-        check_bit($sformatf("out %0d tvalid stable", i), m_tvalid[i], 1'b1);
-        check_data($sformatf("out %0d tdata stable", i), m_tdata[i], reg_m_tdata[i]);
-        check_bit($sformatf("out %0d tlast stable", i), m_tlast[i], reg_m_tlast[i]);
-      end
-    end
-  end
-
-  // Input holds valid
-  always @(negedge clk) begin
-    for (int j = 0; j < NIn; j++) begin
-      for (int i = 0; i < NOut; i++) begin
-        if (rst_n && tv[j][i] && !tr[j][i]) begin
-          check_bit($sformatf("in %0d to %0d holds valid", j, i), tv[j][i], 1'b1);
-        end
-      end
-    end
+    $finish;
   end
 
 endmodule
