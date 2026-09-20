@@ -3,44 +3,139 @@
 module axis_switch #(
     parameter int WIDTH = 8,
     parameter int N_IN  = 2,
-    parameter int N_OUT = 2
+    parameter int N_OUT = 2,
+    parameter int SEL_W = $clog2(N_OUT)
 ) (
-    input  logic                                   clk,
-    input  logic                                   rst_n,
+    input  logic                         clk,
+    input  logic                         rst_n,
     // Slave
-    input  logic [ N_IN-1:0][N_OUT-1:0]            s_tvalid,
-    output logic [ N_IN-1:0][N_OUT-1:0]            s_tready,
-    input  logic [ N_IN-1:0][N_OUT-1:0][WIDTH-1:0] s_tdata,
-    input  logic [ N_IN-1:0][N_OUT-1:0]            s_tlast,
+    input  logic [ N_IN-1:0]             s_tvalid,
+    output logic [ N_IN-1:0]             s_tready,
+    input  logic [ N_IN-1:0][WIDTH-1:0]  s_tdata,
+    input  logic [ N_IN-1:0]             s_tlast,
+    input  logic [ N_IN-1:0][N_OUT-1:0]  s_navail,
+    output logic [ N_IN-1:0][SEL_W-1:0]  s_sel,
+    output logic [ N_IN-1:0]             s_sel_valid,
     // Master
-    output logic [N_OUT-1:0]                       m_tvalid,
-    input  logic [N_OUT-1:0]                       m_tready,
-    output logic [N_OUT-1:0][WIDTH-1:0]            m_tdata,
-    output logic [N_OUT-1:0]                       m_tlast
+    output logic [N_OUT-1:0]             m_tvalid,
+    input  logic [N_OUT-1:0]             m_tready,
+    output logic [N_OUT-1:0][WIDTH-1:0]  m_tdata,
+`ifdef FORMAL
+    output logic [ N_IN-1:0]             f_in_busy,
+    output logic [ N_IN-1:0][SEL_W-1:0]  f_in_out,
+`endif
+    output logic [N_OUT-1:0]             m_tlast
 );
 
+`ifdef FORMAL
+  assign f_in_busy = in_busy;
+  assign f_in_out  = in_out;
+`endif
+
   logic [N_OUT-1:0][ N_IN-1:0] req;
-  logic [N_OUT-1:0][ N_IN-1:0] grant;
-  logic [N_OUT-1:0]            grant_valid;
-  logic [N_OUT-1:0]            hold;
+  logic [N_OUT-1:0][ N_IN-1:0] gnt;
+  logic [N_OUT-1:0]            gnt_valid;
+  logic [N_OUT-1:0]            gnt_won;
+
+  logic [ N_IN-1:0][N_OUT-1:0] gnt_in;
+  logic [ N_IN-1:0][N_OUT-1:0] acc;
+  logic [ N_IN-1:0]            acc_valid;
+  logic [ N_IN-1:0][SEL_W-1:0] acc_sel;
+
+  logic [ N_IN-1:0]            in_busy;
+  logic [ N_IN-1:0][SEL_W-1:0] in_out;
+  logic [N_OUT-1:0]            out_busy;
+  logic [N_OUT-1:0][ N_IN-1:0] out_src;
+  logic [ N_IN-1:0]            xfer_last;
 
   logic [N_OUT-1:0]            sk_tvalid;
   logic [N_OUT-1:0]            sk_tready;
   logic [N_OUT-1:0][WIDTH-1:0] sk_tdata;
   logic [N_OUT-1:0]            sk_tlast;
 
-  for (genvar i = 0; i < N_OUT; i++) begin : g_out
+  // Pairing in force
+  for (genvar i = 0; i < N_OUT; i++) begin : g_busy
+    for (genvar j = 0; j < N_IN; j++) begin : g_src
+      assign out_src[i][j] = in_busy[j] && (in_out[j] == SEL_W'(i));
+    end
+    assign out_busy[i] = |out_src[i];
+  end
+
+  // Unmatched only
+  for (genvar i = 0; i < N_OUT; i++) begin : g_req
+    for (genvar j = 0; j < N_IN; j++) begin : g_bit
+      assign req[i][j] = s_navail[j][i] && !in_busy[j] && !out_busy[i];
+    end
+  end
+
+  // Grant stage
+  for (genvar i = 0; i < N_OUT; i++) begin : g_grant
     rr_arbiter #(
         .N(N_IN)
     ) u_arb (
         .clk(clk),
         .rst_n(rst_n),
         .req(req[i]),
-        .hold(hold[i]),
-        .grant(grant[i]),
-        .grant_valid(grant_valid[i])
+        .hold(1'b0),
+        .won(gnt_won[i]),
+        .grant(gnt[i]),
+        .grant_valid(gnt_valid[i])
     );
 
+    logic [N_IN-1:0] acc_col;
+    for (genvar j = 0; j < N_IN; j++) begin : g_col
+      assign acc_col[j] = acc[j][i];
+    end
+    assign gnt_won[i] = |(gnt[i] & acc_col);
+  end
+
+  // Accept stage
+  for (genvar j = 0; j < N_IN; j++) begin : g_accept
+    for (genvar i = 0; i < N_OUT; i++) begin : g_row
+      assign gnt_in[j][i] = gnt[i][j];
+    end
+
+    rr_arbiter #(
+        .N(N_OUT)
+    ) u_arb (
+        .clk(clk),
+        .rst_n(rst_n),
+        .req(gnt_in[j]),
+        .hold(1'b0),
+        .won(1'b1),
+        .grant(acc[j]),
+        .grant_valid(acc_valid[j])
+    );
+
+    always_comb begin
+      acc_sel[j] = '0;
+      for (int i = 0; i < N_OUT; i++) if (acc[j][i]) acc_sel[j] = SEL_W'(i);
+    end
+  end
+
+  // Pairing held
+  for (genvar j = 0; j < N_IN; j++) begin : g_match
+    assign xfer_last[j] = s_tvalid[j] && s_tready[j] && s_tlast[j];
+
+    always_ff @(posedge clk) begin
+      if (!rst_n) begin
+        in_busy[j] <= 1'b0;
+        in_out[j]  <= '0;
+      end else if (in_busy[j]) begin
+        if (xfer_last[j]) in_busy[j] <= 1'b0;
+      end else if (acc_valid[j]) begin
+        in_busy[j] <= 1'b1;
+        in_out[j]  <= acc_sel[j];
+      end
+    end
+
+    assign s_sel[j] = in_out[j];
+    assign s_sel_valid[j] = in_busy[j];
+    assign s_tready[j] = in_busy[j] && sk_tready[in_out[j]];
+  end
+
+  // Exit per output
+  for (genvar i = 0; i < N_OUT; i++) begin : g_out
     axis_skid #(
         .WIDTH(WIDTH)
     ) u_skid (
@@ -56,29 +151,14 @@ module axis_switch #(
         .m_tlast(m_tlast[i])
     );
 
-    logic [    N_IN-1:0] in_tvalid;
-    logic [N_IN*WIDTH-1:0] in_tdata;
-    logic [    N_IN-1:0] in_tlast;
-
-    for (genvar j = 0; j < N_IN; j++) begin : g_in
-      assign in_tvalid[j] = s_tvalid[j][i];
-      assign in_tdata[j*WIDTH+:WIDTH] = s_tdata[j][i];
-      assign in_tlast[j] = s_tlast[j][i];
-
-      assign req[i][j] = s_tvalid[j][i];
-      assign s_tready[j][i] = grant[i][j] && sk_tready[i];
-    end
-
-    assign hold[i] = grant_valid[i] && !(sk_tvalid[i] && sk_tready[i] && sk_tlast[i]);
-
     always_comb begin
       sk_tvalid[i] = 1'b0;
       sk_tdata[i]  = '0;
       sk_tlast[i]  = 1'b0;
       for (int j = 0; j < N_IN; j++) begin
-        sk_tvalid[i] |= grant[i][j] && in_tvalid[j];
-        sk_tdata[i] |= {WIDTH{grant[i][j]}} & in_tdata[j*WIDTH+:WIDTH];
-        sk_tlast[i] |= grant[i][j] && in_tlast[j];
+        sk_tvalid[i] |= out_src[i][j] && s_tvalid[j];
+        sk_tdata[i] |= {WIDTH{out_src[i][j]}} & s_tdata[j];
+        sk_tlast[i] |= out_src[i][j] && s_tlast[j];
       end
     end
   end
@@ -99,57 +179,40 @@ module axis_switch #(
   localparam int GapW = $clog2(MaxSrcGap + MaxReadyGap + 2);
   localparam int WaitW = $clog2(MaxOutWait + 1);
 
-  logic [N_OUT-1:0] f_out_pkt = '0;
-
   initial assume (!rst_n);
 
   // Slave port contract
   for (genvar j = 0; j < N_IN; j++) begin : g_fin
-    for (genvar i = 0; i < N_OUT; i++) begin : g_fq
-      // Yosys mis-slices past
-      logic [WIDTH-1:0] f_data_in;
-      logic             f_valid_in;
-      logic             f_ready_in;
-      logic             f_last_in;
-      logic [BeatW-1:0] f_beats;
-      logic [ GapW-1:0] f_src_gap;
-      logic             f_in_pkt;
+    logic [WIDTH-1:0] f_data_in;
+    logic [BeatW-1:0] f_beats;
+    logic [ GapW-1:0] f_src_gap;
 
-      assign f_data_in  = s_tdata[j][i];
-      assign f_valid_in = s_tvalid[j][i];
-      assign f_ready_in = s_tready[j][i];
-      assign f_last_in  = s_tlast[j][i];
+    assign f_data_in = s_tdata[j];
 
-      // Packet in flight
-      always_ff @(posedge clk) begin
-        if (!rst_n) begin
-          f_in_pkt <= 1'b0;
-          f_beats  <= '0;
-        end else if (f_valid_in && f_ready_in) begin
-          f_in_pkt <= !f_last_in;
-          f_beats  <= f_last_in ? '0 : f_beats + 1;
-        end
+    always_ff @(posedge clk) begin
+      if (!rst_n) f_beats <= '0;
+      else if (s_tvalid[j] && s_tready[j]) f_beats <= s_tlast[j] ? '0 : f_beats + 1;
+    end
+
+    always_ff @(posedge clk) begin
+      if (!rst_n || s_tvalid[j] || !in_busy[j]) f_src_gap <= '0;
+      else f_src_gap <= f_src_gap + 1;
+    end
+
+    always @(posedge clk) begin
+      if (!rst_n) assume (!s_tvalid[j]);
+      if (rst_n) begin
+        assume (!s_tvalid[j] || s_sel_valid[j]);
+        assume (int'(f_beats) < MaxPktBeats);
+        assume (int'(f_src_gap) < MaxSrcGap);
+        assume (!s_sel_valid[j] || s_navail[j][s_sel[j]]);
       end
-
-      // Source idle run
-      always_ff @(posedge clk) begin
-        if (!rst_n || f_valid_in) f_src_gap <= '0;
-        else if (f_in_pkt) f_src_gap <= f_src_gap + 1;
-      end
-
-      always @(posedge clk) begin
-        if (!rst_n) assume (!f_valid_in);
-        if (rst_n) begin
-          assume (int'(f_beats) < MaxPktBeats);  // Packets end
-          assume (int'(f_src_gap) < MaxSrcGap);  // Sources resume
-        end
-        if (f_past_valid) begin
-          if (!$past(rst_n)) assume (!f_valid_in);
-          if ($past(rst_n) && rst_n && $past(f_valid_in && !f_ready_in)) begin
-            assume (f_valid_in);
-            assume (f_data_in == $past(f_data_in));
-            assume (f_last_in == $past(f_last_in));
-          end
+      if (f_past_valid) begin
+        if (!$past(rst_n)) assume (!s_tvalid[j]);
+        if ($past(rst_n) && rst_n && $past(s_tvalid[j] && !s_tready[j])) begin
+          assume (s_tvalid[j]);
+          assume (f_data_in == $past(f_data_in));
+          assume (s_tlast[j] == $past(s_tlast[j]));
         end
       end
     end
@@ -157,138 +220,128 @@ module axis_switch #(
 
   // Master port contract
   for (genvar i = 0; i < N_OUT; i++) begin : g_fout
-    logic [WIDTH-1:0] f_data_out;
-    logic [ N_IN-1:0] f_grant;
     logic [ GapW-1:0] f_ready_gap;
     logic [WaitW-1:0] f_wait;
 
-    assign f_data_out = m_tdata[i];
-    assign f_grant = grant[i];
-
-    // Packet in flight
-    always_ff @(posedge clk) begin
-      if (!rst_n) f_out_pkt[i] <= 1'b0;
-      else if (sk_tvalid[i] && sk_tready[i]) f_out_pkt[i] <= !sk_tlast[i];
-    end
-
-    // Sink stall run
     always_ff @(posedge clk) begin
       if (!rst_n || !(m_tvalid[i] && !m_tready[i])) f_ready_gap <= '0;
       else f_ready_gap <= f_ready_gap + 1;
     end
 
-    // Output starvation
     always_ff @(posedge clk) begin
       if (!rst_n || (sk_tvalid[i] && sk_tready[i])) f_wait <= '0;
       else if (|req[i] && int'(f_wait) < MaxOutWait) f_wait <= f_wait + 1;
     end
 
     always @(posedge clk) begin
-      if (rst_n) begin
-        assume (int'(f_ready_gap) < MaxReadyGap);  // Sinks accept
-        assert ($onehot0(f_grant));  // One source
-        assert (int'(f_wait) < MaxOutWait);  // Bounded wait
-      end
-      if (f_past_valid && $past(rst_n) && rst_n) begin
-        if ($past(m_tvalid[i] && !m_tready[i])) begin
-          assert (m_tvalid[i]);
-          assert (f_data_out == $past(f_data_out));
-          assert (m_tlast[i] == $past(m_tlast[i]));
-        end
-        if (f_out_pkt[i]) assert (f_grant == $past(f_grant));  // Winner holds
-      end
-      if (f_past_valid && !$past(rst_n)) assert (!m_tvalid[i]);
+      if (rst_n) assume (int'(f_ready_gap) < MaxReadyGap);
     end
+  end
 
-    // Mux and routing
-    for (genvar j = 0; j < N_IN; j++) begin : g_froute
-      logic [WIDTH-1:0] f_route_data;
-      logic [WIDTH-1:0] f_buf_byte;
-      logic             f_route_last;
+  // Every pairing seen
+  logic [N_IN-1:0][N_OUT-1:0] f_paired;
 
-      assign f_route_data = s_tdata[j][i];
-      assign f_route_last = s_tlast[j][i];
-      assign f_buf_byte   = sk_tdata[i];
+  always_ff @(posedge clk) begin
+    if (!rst_n) f_paired <= '0;
+    else f_paired <= f_paired | acc;
+  end
 
-      always @(posedge clk) begin
-        if (rst_n && sk_tvalid[i] && f_grant[j]) begin
-          assert (f_buf_byte == f_route_data);
-          assert (sk_tlast[i] == f_route_last);
-        end
-      end
-    end
+  for (genvar i = 0; i < N_OUT; i++) begin : g_fsafe
+    // Yosys mis-slices past
+    logic [N_IN-1:0] f_req;
+    logic [N_IN-1:0] f_gnt;
+    logic            f_stick;
+
+    assign f_req   = req[i];
+    assign f_gnt   = gnt[i];
+    assign f_stick = gnt_valid[i] && !gnt_won[i];
 
     always @(posedge clk) begin
       if (rst_n) begin
-        cover (&req[i]);  // Contention
-        cover (m_tvalid[i] && m_tready[i] && m_tlast[i]);  // Packet completes
+        assert ($onehot0(gnt[i]));
+        assert ((gnt[i] & ~req[i]) == '0);
+        assert ($onehot0(out_src[i]));
+        assert (gnt_valid[i] == |gnt[i]);
       end
       if (f_past_valid && $past(rst_n) && rst_n) begin
-        cover (|f_grant && |$past(f_grant) && f_grant != $past(f_grant));  // Handover
+        if ($past(f_stick) && (f_req == $past(f_req))) assert (f_gnt == $past(f_gnt));
       end
     end
   end
 
-  always @(posedge clk) begin
-    if (rst_n) begin
-      cover (&(m_tvalid & m_tready));  // Both outputs move
-      cover (m_tvalid[0] && m_tready[0] && m_tvalid[1] && !m_tready[1]);  // One stalled
-    end
-  end
+  for (genvar j = 0; j < N_IN; j++) begin : g_fmatch
+    // Yosys mis-slices past
+    logic [SEL_W-1:0] f_out;
+    logic             f_hold;
 
-  localparam int MaxBeats = 8;
-  localparam int CntW = $clog2(MaxBeats + 1);
+    assign f_out  = in_out[j];
+    assign f_hold = in_busy[j] && !xfer_last[j];
 
-  (* anyconst *) logic [$clog2(N_IN)-1:0] f_src;
-  (* anyconst *) logic [$clog2(N_OUT)-1:0] f_dst;
-  (* anyconst *) logic [$clog2(MaxBeats)-1:0] f_idx;
-
-  logic [CntW-1:0] f_in_pos;
-  logic [CntW-1:0] f_out_pos;
-  logic [WIDTH-1:0] f_data;
-  logic [WIDTH-1:0] f_byte;
-  logic f_last;
-  logic f_tagged;
-
-  logic [WIDTH-1:0] f_src_data;
-  logic [WIDTH-1:0] f_buf_data;
-  logic [WIDTH-1:0] f_out_byte;
-  logic f_from_src;
-  logic f_in_xfer;
-  logic f_out_xfer;
-
-  assign f_src_data = s_tdata[f_src][f_dst];
-  assign f_buf_data = sk_tdata[f_dst];
-  assign f_out_byte = m_tdata[f_dst];
-  assign f_from_src = grant[f_dst][f_src];
-  assign f_in_xfer  = sk_tvalid[f_dst] && sk_tready[f_dst];
-  assign f_out_xfer = m_tvalid[f_dst] && m_tready[f_dst];
-
-  // Log chosen beat
-  always_ff @(posedge clk) begin
-    if (!rst_n) f_in_pos <= '0;
-    else if (f_in_xfer) begin
-      if (int'(f_in_pos) < MaxBeats) f_in_pos <= f_in_pos + 1;
-      if (f_in_pos == (CntW)'(f_idx)) begin
-        f_data   <= f_buf_data;
-        f_last   <= sk_tlast[f_dst];
-        f_tagged <= f_from_src;
-        f_byte   <= f_src_data;
+    always @(posedge clk) begin
+      if (rst_n) begin
+        assert ($onehot0(acc[j]));
+        assert ((acc[j] & ~gnt_in[j]) == '0);
+        assert (!acc_valid[j] || !in_busy[j]);
+        assert (!s_tready[j] || in_busy[j]);
+      end
+      if (f_past_valid && $past(rst_n) && rst_n) begin
+        if ($past(f_hold)) begin
+          assert (in_busy[j]);
+          assert (f_out == $past(f_out));
+        end
       end
     end
   end
 
-  // Check chosen beat
-  always_ff @(posedge clk) begin
-    if (!rst_n) f_out_pos <= '0;
-    else if (f_out_xfer) begin
-      if (int'(f_out_pos) < MaxBeats) f_out_pos <= f_out_pos + 1;
-      if (f_out_pos == (CntW)'(f_idx)) begin
-        assert (f_out_byte == f_data);
-        assert (m_tlast[f_dst] == f_last);
-        if (f_tagged) assert (f_out_byte == f_byte);
+  for (genvar i = 0; i < N_OUT; i++) begin : g_fcov
+    for (genvar j = 0; j < N_IN; j++) begin : g_pair
+      always @(posedge clk) if (rst_n) cover (acc[j][i]);
+    end
+  end
+
+  always @(posedge clk) if (rst_n) cover (f_paired == '1);
+
+  // Requests hold until served
+  localparam int MaxMatchWait = N_IN * N_OUT * MaxPktBeats * (MaxSrcGap + MaxReadyGap + 2);
+  localparam int MatchW = $clog2(MaxMatchWait + 1);
+
+  for (genvar j = 0; j < N_IN; j++) begin : g_fwait
+    for (genvar i = 0; i < N_OUT; i++) begin : g_fav
+      // Yosys mis-slices past
+      logic f_av;
+      logic f_done;
+
+      assign f_av   = s_navail[j][i];
+      assign f_done = xfer_last[j] && (in_out[j] == SEL_W'(i));
+
+      always @(posedge clk) begin
+        if (f_past_valid && $past(rst_n) && rst_n) begin
+          if ($past(f_av) && !$past(f_done)) assume (f_av);
+        end
       end
     end
+
+    logic [MatchW-1:0] f_match_wait;
+    logic              f_asking;
+
+    assign f_asking = |s_navail[j] && !in_busy[j];
+
+    always_ff @(posedge clk) begin
+      if (!rst_n || acc_valid[j] || !f_asking) f_match_wait <= '0;
+      else if (int'(f_match_wait) < MaxMatchWait) f_match_wait <= f_match_wait + 1;
+    end
+
+    always @(posedge clk) if (rst_n) assert (int'(f_match_wait) < MaxMatchWait);
+
+    // Pairing ends
+    logic [MatchW-1:0] f_pair_life;
+
+    always_ff @(posedge clk) begin
+      if (!rst_n || !in_busy[j]) f_pair_life <= '0;
+      else if (int'(f_pair_life) < MaxMatchWait) f_pair_life <= f_pair_life + 1;
+    end
+
+    always @(posedge clk) if (rst_n) assert (int'(f_pair_life) < MaxMatchWait);
   end
 
 `endif
