@@ -316,6 +316,23 @@ module datapath_top_tb ();
     join
     wait_empty();
 
+    // Refill at handover
+    for (int r = 0; r < 6; r++) begin
+      fork
+        begin
+          send_frame(0, Mac1, 46, 1'b0);
+          send_frame(0, Mac1, 46, 1'b0);
+          send_frame(0, Mac0, 46, 1'b0);
+        end
+        begin
+          send_frame(1, Mac1, 46, 1'b0);
+          send_frame(1, Mac0, 46, 1'b0);
+          send_frame(1, Mac0, 46, 1'b0);
+        end
+      join
+      wait_empty();
+    end
+
     // Randomized traffic
     fork
       random_traffic(0, 40);
