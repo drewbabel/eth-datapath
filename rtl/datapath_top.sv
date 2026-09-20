@@ -60,10 +60,13 @@ module datapath_top #(
   logic [NPorts-1:0][     31:0] drop_cnt;
 
   // Switch ingress
-  logic [NPorts-1:0][NPorts-1:0]              sw_s_tvalid;
-  logic [NPorts-1:0][NPorts-1:0]              sw_s_tready;
-  logic [NPorts-1:0][NPorts-1:0][StreamW-1:0] sw_s_tdata;
-  logic [NPorts-1:0][NPorts-1:0]              sw_s_tlast;
+  logic [NPorts-1:0]                          sw_s_tvalid;
+  logic [NPorts-1:0]                          sw_s_tready;
+  logic [NPorts-1:0][StreamW-1:0]             sw_s_tdata;
+  logic [NPorts-1:0]                          sw_s_tlast;
+  logic [NPorts-1:0][NPorts-1:0]              sw_s_navail;
+  logic [NPorts-1:0][ DestW-1:0]              sw_s_sel;
+  logic [NPorts-1:0]                          sw_s_sel_valid;
   logic [NPorts-1:0][NPorts-1:0][      31:0]  voq_drop;
 
   // Switch egress
@@ -227,6 +230,9 @@ module datapath_top #(
         .s_tdata(rs_tdata),
         .s_tlast(rs_tlast),
         .s_tdest(rs_tdest),
+        .navail(sw_s_navail[i]),
+        .sel(sw_s_sel[i]),
+        .sel_valid(sw_s_sel_valid[i]),
         .m_tvalid(sw_s_tvalid[i]),
         .m_tready(sw_s_tready[i]),
         .m_tdata(sw_s_tdata[i]),
@@ -279,7 +285,8 @@ module datapath_top #(
   axis_switch #(
       .WIDTH(StreamW),
       .N_IN (NPorts),
-      .N_OUT(NPorts)
+      .N_OUT(NPorts),
+      .SEL_W(DestW)
   ) u_switch (
       .clk(clk),
       .rst_n(rst_n),
@@ -287,6 +294,9 @@ module datapath_top #(
       .s_tready(sw_s_tready),
       .s_tdata(sw_s_tdata),
       .s_tlast(sw_s_tlast),
+      .s_navail(sw_s_navail),
+      .s_sel(sw_s_sel),
+      .s_sel_valid(sw_s_sel_valid),
       .m_tvalid(sw_m_tvalid),
       .m_tready(sw_m_tready),
       .m_tdata(sw_m_tdata),
