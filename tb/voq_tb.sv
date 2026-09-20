@@ -20,11 +20,20 @@ module voq_tb ();
   logic s_tlast = 1'b0;
   logic [DestW-1:0] s_tdest = '0;
 
-  logic [NOut-1:0] m_tvalid;
-  logic [NOut-1:0] m_tready = '1;
-  logic [NOut-1:0][Width-1:0] m_tdata;
-  logic [NOut-1:0] m_tlast;
+  logic [NOut-1:0] navail;
+  logic [DestW-1:0] sel = '0;
+  logic sel_hold = 1'b0;
+  logic sel_valid;
+  logic m_tvalid;
+  logic m_tready = 1'b1;
+  logic [Width-1:0] m_tdata;
+  logic m_tlast;
   logic [NOut-1:0][31:0] drop_cnt;
+
+  logic block0 = 1'b0;
+  int rr = 0;
+  int pick;
+  int cand;
 
   localparam int NOut4 = 4;
   localparam int DestW4 = 2;
@@ -33,11 +42,18 @@ module voq_tb ();
   logic [Width-1:0] d4_tdata = '0;
   logic d4_tlast = 1'b0;
   logic [DestW4-1:0] d4_tdest = '0;
-  logic [NOut4-1:0] d4_m_tvalid;
-  logic [NOut4-1:0][Width-1:0] d4_m_tdata;
-  logic [NOut4-1:0] d4_m_tlast;
+  logic [NOut4-1:0] d4_navail;
+  logic [DestW4-1:0] d4_sel = '0;
+  logic d4_sel_hold = 1'b0;
+  logic d4_sel_valid;
+  logic d4_m_tvalid;
+  logic [Width-1:0] d4_m_tdata;
+  logic d4_m_tlast;
   logic [NOut4-1:0][31:0] d4_drop;
   int d4_beats[NOut4];
+  int d4_rr = 0;
+  int d4_pick;
+  int d4_cand;
 
   // Contract model
   logic [Width-1:0] sent0[$];
@@ -51,7 +67,6 @@ module voq_tb ();
   int out_frames0 = 0;
   int out_frames1 = 0;
   logic ready_low_seen = 1'b0;
-  logic both_moved_seen = 1'b0;
   logic stall_en = 1'b0;
   int max_seen0 = 0;
   int max_seen1 = 0;
@@ -72,6 +87,9 @@ module voq_tb ();
       .s_tdata(s_tdata),
       .s_tlast(s_tlast),
       .s_tdest(s_tdest),
+      .navail(navail),
+      .sel(sel),
+      .sel_valid(sel_valid),
       .m_tvalid(m_tvalid),
       .m_tready(m_tready),
       .m_tdata(m_tdata),
@@ -93,15 +111,68 @@ module voq_tb ();
       .s_tdata(d4_tdata),
       .s_tlast(d4_tlast),
       .s_tdest(d4_tdest),
+      .navail(d4_navail),
+      .sel(d4_sel),
+      .sel_valid(d4_sel_valid),
       .m_tvalid(d4_m_tvalid),
-      .m_tready('1),
+      .m_tready(1'b1),
       .m_tdata(d4_m_tdata),
       .m_tlast(d4_m_tlast),
       .drop_cnt(d4_drop)
   );
 
+  // Exit scheduler model
+  assign sel_valid = sel_hold;
+  assign d4_sel_valid = d4_sel_hold;
+
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      sel_hold <= 1'b0;
+      sel <= '0;
+      rr <= 0;
+    end else if (sel_hold) begin
+      if (m_tvalid && m_tready && m_tlast) begin
+        sel_hold <= 1'b0;
+        rr <= (int'(sel) + 1) % NOut;
+      end
+    end else begin
+      pick = -1;
+      for (int k = 0; k < NOut; k++) begin
+        cand = (rr + k) % NOut;
+        if (pick < 0 && navail[cand] && !(cand == 0 && block0)) pick = cand;
+      end
+      if (pick >= 0) begin
+        sel <= DestW'(pick);
+        sel_hold <= 1'b1;
+      end
+    end
+  end
+
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      d4_sel_hold <= 1'b0;
+      d4_sel <= '0;
+      d4_rr <= 0;
+    end else if (d4_sel_hold) begin
+      if (d4_m_tvalid && d4_m_tlast) begin
+        d4_sel_hold <= 1'b0;
+        d4_rr <= (int'(d4_sel) + 1) % NOut4;
+      end
+    end else begin
+      d4_pick = -1;
+      for (int k = 0; k < NOut4; k++) begin
+        d4_cand = (d4_rr + k) % NOut4;
+        if (d4_pick < 0 && d4_navail[d4_cand]) d4_pick = d4_cand;
+      end
+      if (d4_pick >= 0) begin
+        d4_sel <= DestW4'(d4_pick);
+        d4_sel_hold <= 1'b1;
+      end
+    end
+  end
+
   always @(negedge clk) begin
-    if (rst_n) for (int d = 0; d < NOut4; d++) if (d4_m_tvalid[d]) d4_beats[d]++;
+    if (rst_n && d4_m_tvalid) d4_beats[d4_sel]++;
   end
 
   task automatic check_bit(string name, logic got, logic exp);
@@ -123,8 +194,6 @@ module voq_tb ();
   // Never backpressures
   always @(negedge clk) begin
     if (rst_n && !s_tready) ready_low_seen <= 1'b1;
-    if (rst_n && m_tvalid[0] && m_tready[0] && m_tvalid[1] && m_tready[1])
-      both_moved_seen <= 1'b1;
   end
 
   // Frame driver
@@ -155,7 +224,6 @@ module voq_tb ();
   task automatic match_frame0();
     int len;
     logic same;
-    logic [Width-1:0] want;
     forever begin
       if (sent_len0.size() == 0) begin
         checks++;
@@ -211,18 +279,16 @@ module voq_tb ();
     end
   endtask
 
-  // Output monitors
+  // Exit monitor
   always @(negedge clk) begin
-    if (rst_n && m_tvalid[0] && m_tready[0]) begin
-      obs0.push_back(m_tdata[0]);
-      if (m_tlast[0]) match_frame0();
-    end
-  end
-
-  always @(negedge clk) begin
-    if (rst_n && m_tvalid[1] && m_tready[1]) begin
-      obs1.push_back(m_tdata[1]);
-      if (m_tlast[1]) match_frame1();
+    if (rst_n && m_tvalid && m_tready) begin
+      if (sel == 1'b0) begin
+        obs0.push_back(m_tdata);
+        if (m_tlast) match_frame0();
+      end else begin
+        obs1.push_back(m_tdata);
+        if (m_tlast) match_frame1();
+      end
     end
   end
 
@@ -283,23 +349,23 @@ module voq_tb ();
     send_frame(1'b0, 12);
     send_frame(1'b1, 12);
     send_frame(1'b0, 12);
-    drain(120);
+    drain(160);
     tail_drops();
     check_int("dest0 drops", int'(drop_cnt[0]), exp_drop0);
     check_int("dest1 drops", int'(drop_cnt[1]), exp_drop1);
 
     // Head of line
-    m_tready[0] = 1'b0;
+    block0 = 1'b1;
     out_frames1 = 0;
     for (int f = 0; f < 6; f++) begin
       send_frame(1'b0, MaxFrame);
       send_frame(1'b1, 4);
       drain(20);
     end
-    drain(200);
+    drain(300);
     check_int("dest1 crossed a blocked dest0", out_frames1, 6);
-    m_tready[0] = 1'b1;
-    drain(400);
+    block0 = 1'b0;
+    drain(600);
     tail_drops();
     check_int("dest0 drops after block", int'(drop_cnt[0]), exp_drop0);
     check_int("dest1 drops after block", int'(drop_cnt[1]), exp_drop1);
@@ -311,20 +377,19 @@ module voq_tb ();
       begin
         forever begin
           @(posedge clk);
-          if (stall_en) m_tready <= ($bits(m_tready))'($urandom);
-          else m_tready <= '1;
+          if (stall_en) m_tready <= logic'($urandom);
+          else m_tready <= 1'b1;
         end
       end
     join_any
     stall_en = 1'b0;
-    m_tready = '1;
-    drain(1500);
+    m_tready = 1'b1;
+    drain(3000);
     tail_drops();
     check_int("dest0 drops randomized", int'(drop_cnt[0]), exp_drop0);
     check_int("dest1 drops randomized", int'(drop_cnt[1]), exp_drop1);
 
     check_bit("input never stalled", ready_low_seen, 1'b0);
-    check_bit("both outputs moved together", both_moved_seen, 1'b1);
 
     checks++;
     if (max_seen0 > MaxFrame || max_seen1 > MaxFrame) begin

@@ -7,6 +7,7 @@ module rr_arbiter #(
     input  logic         rst_n,
     input  logic [N-1:0] req,         // Request
     input  logic         hold,
+    input  logic         won,
     output logic [N-1:0] grant,
     output logic         grant_valid
 );
@@ -34,7 +35,7 @@ module rr_arbiter #(
       mask <= '1;  // See full request set
       holding <= 1'b0;
     end else begin
-      if (|grant) mask <= ~(grant | (grant - 1));
+      if (|grant && won) mask <= ~(grant | (grant - 1));
 
       if (grant_valid) holding <= hold;
       if (!holding) held_grant <= rr_grant;
@@ -52,7 +53,8 @@ module rr_arbiter #(
 `ifdef FORMAL
 
   localparam int MaxBurst = 8;
-  localparam int MaxWait = N * MaxBurst;
+  localparam int MaxStick = 2;
+  localparam int MaxWait = N * MaxBurst * MaxStick;
 
   (* anyconst *) logic [$clog2(N)-1:0] f_port;
   logic [$clog2(MaxWait+1)-1:0] f_wait;
@@ -61,7 +63,7 @@ module rr_arbiter #(
   logic [N-1:0] f_released;
   logic f_past_valid = 1'b0;
 
-  assign f_released = grant & {N{!hold}};
+  assign f_released = grant & {N{!hold && won}};
 
   always_ff @(posedge clk) f_past_valid <= 1'b1;
 
@@ -97,8 +99,16 @@ module rr_arbiter #(
     end
   end
 
+  logic [$clog2(MaxStick+1)-1:0] f_stick;
+
+  always_ff @(posedge clk) begin
+    if (!rst_n || won || !(|grant)) f_stick <= '0;
+    else f_stick <= f_stick + 1;
+  end
+
   always_ff @(posedge clk) begin
     assume (int'(f_burst) < MaxBurst);
+    assume (int'(f_stick) < MaxStick);
 
     // Requesters hold req until granted and released
     if (f_past_valid && $past(rst_n) && rst_n) begin
@@ -110,6 +120,9 @@ module rr_arbiter #(
     assert (int'(f_wait) < MaxWait);
 
     if (f_past_valid && $past(rst_n) && rst_n) begin
+      // Pointer waits for won
+      if ($past(|grant && !won)) assert (mask == $past(mask));
+
       // Held grant is stable
       if ($past(grant_valid) && $past(hold)) assert (grant == $past(grant));
 
