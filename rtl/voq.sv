@@ -16,11 +16,17 @@ module voq #(
     input  logic [ WIDTH-1:0]            s_tdata,
     input  logic                         s_tlast,
     input  logic [DEST_W-1:0]            s_tdest,
-    // Master
-    output logic [ N_OUT-1:0]            m_tvalid,
-    input  logic [ N_OUT-1:0]            m_tready,
-    output logic [ N_OUT-1:0][WIDTH-1:0] m_tdata,
-    output logic [ N_OUT-1:0]            m_tlast,
+    // Shared exit
+    output logic [ N_OUT-1:0]            navail,
+    input  logic [DEST_W-1:0]            sel,
+    input  logic                         sel_valid,
+    output logic                         m_tvalid,
+    input  logic                         m_tready,
+    output logic [ WIDTH-1:0]            m_tdata,
+`ifdef FORMAL
+    output logic [DEST_W-1:0]            f_out_sel,
+`endif
+    output logic                         m_tlast,
     // Status
     output logic [ N_OUT-1:0][     31:0] drop_cnt
 );
@@ -34,8 +40,12 @@ module voq #(
   logic [N_OUT-1:0][    QW-1:0] q_rd_data;
   logic [N_OUT-1:0]             q_full;
   logic [N_OUT-1:0]             q_empty;
-  logic [N_OUT-1:0]             q_out_valid;
   logic [N_OUT-1:0][CountW-1:0] q_count;
+
+  logic                         out_valid;
+  logic [DEST_W-1:0]            out_sel;
+  logic                         pop;
+  logic                         held;
 
   logic                         sof;
   logic                         room;
@@ -59,18 +69,32 @@ module voq #(
         .empty(q_empty[d])
     );
 
-    // Registered read
-    assign q_rd_en[d] = !q_empty[d] && (!q_out_valid[d] || m_tready[d]);
+    // Selected queue pops
+    assign q_rd_en[d] = pop && (sel == DEST_W'(d));
 
-    always_ff @(posedge clk) begin
-      if (!rst_n) q_out_valid[d] <= 1'b0;
-      else if (q_rd_en[d]) q_out_valid[d] <= 1'b1;
-      else if (m_tready[d]) q_out_valid[d] <= 1'b0;
-    end
-
-    assign m_tvalid[d] = q_out_valid[d];
-    assign {m_tlast[d], m_tdata[d]} = q_rd_data[d];
+    // Held beat still counts
+    assign navail[d] = !q_empty[d] || (out_valid && out_sel == DEST_W'(d));
   end
+
+  assign pop = sel_valid && !q_empty[sel] && (!out_valid || (held && m_tready && !m_tlast));
+
+  // Registered read
+  always_ff @(posedge clk) begin
+    if (!rst_n) begin
+      out_valid <= 1'b0;
+      out_sel   <= '0;
+    end else if (pop) begin
+      out_valid <= 1'b1;
+      out_sel   <= sel;
+    end else if (held && m_tready) out_valid <= 1'b0;
+  end
+
+  assign held = sel_valid && (out_sel == sel);
+  assign m_tvalid = out_valid && held;
+`ifdef FORMAL
+  assign f_out_sel = out_sel;
+`endif
+  assign {m_tlast, m_tdata} = q_rd_data[out_sel];
 
   // Drops never stalls
   assign s_tready = 1'b1;
@@ -148,7 +172,21 @@ module voq #(
     always @(posedge clk) if (rst_n) assert (!(q_wr_en[d] && q_full[d]));
   end
 
-  // NEXT property list
+  // Requests hold until served
+  for (genvar d = 0; d < N_OUT; d++) begin : g_fhold
+    // Yosys mis-slices past
+    logic f_avail;
+    logic f_served;
+
+    assign f_avail  = navail[d];
+    assign f_served = m_tvalid && m_tready && (out_sel == DEST_W'(d));
+
+    always @(posedge clk) begin
+      if (f_past_valid && $past(rst_n) && rst_n) begin
+        if ($past(f_avail) && !$past(f_served)) assert (f_avail);
+      end
+    end
+  end
 
 `endif
 
