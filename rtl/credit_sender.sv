@@ -7,14 +7,14 @@ module credit_sender #(
 `ifdef FORMAL
     output logic [$clog2(DEPTH+1)-1:0] f_credits,
 `endif
-    input  logic             clk,
-    input  logic             rst_n,
-    input  logic             src_valid,
-    input  logic [WIDTH-1:0] src_data,
+    input  wire              clk,
+    input  wire              rst_n,
+    input  wire              src_valid,
+    input  wire  [WIDTH-1:0] src_data,
     output logic             src_ready,
     output logic             tx_valid,
     output logic [WIDTH-1:0] tx_data,
-    input  logic             credit_return
+    input  wire              credit_return
 );
 
   localparam int CW = $clog2(DEPTH + 1);  // Credit width

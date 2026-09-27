@@ -3,21 +3,21 @@
 module latency_probe #(
     parameter int DEPTH = 16
 ) (
-    input logic clk,
-    input logic rst_n,
+    input wire  clk,
+    input wire  rst_n,
 
     // Pin envelopes
-    input logic rx_ctl,
-    input logic rx_last,
-    input logic tx_ctl,
+    input wire  rx_ctl,
+    input wire  rx_last,
+    input wire  tx_ctl,
 
     // Per frame verdict
-    input logic verdict_valid,
-    input logic verdict_drop,
+    input wire  verdict_valid,
+    input wire  verdict_drop,
 
     // Host commands
-    input logic clear,
-    input logic snapshot,
+    input wire  clear,
+    input wire  snapshot,
 
     // Frozen results
     output logic [31:0] stat_min,

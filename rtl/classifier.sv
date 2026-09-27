@@ -6,16 +6,16 @@ module classifier #(
     parameter logic [N_ENTRIES*48-1:0] MATCH_MAC = '0,
     parameter logic [N_ENTRIES*DEST_W-1:0] MATCH_DEST = '0
 ) (
-    input  logic              clk,
-    input  logic              rst_n,
+    input  wire               clk,
+    input  wire               rst_n,
     // Slave
-    input  logic              s_tvalid,
+    input  wire               s_tvalid,
     output logic              s_tready,
-    input  logic [       7:0] s_tdata,
-    input  logic              s_tlast,
+    input  wire  [       7:0] s_tdata,
+    input  wire               s_tlast,
     // Master
     output logic              m_tvalid,
-    input  logic              m_tready,
+    input  wire               m_tready,
     output logic [       7:0] m_tdata,
     output logic              m_tlast,
     output logic [DEST_W-1:0] m_tdest,

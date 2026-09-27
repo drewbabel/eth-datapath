@@ -6,35 +6,35 @@ module uart_axil #(
     parameter int ADDR_WIDTH  = 5,
     parameter int DATA_WIDTH  = 32
 ) (
-    input logic clk,
-    input logic rst_n,
+    input wire  clk,
+    input wire  rst_n,
 
     // Serial pins
-    input  logic rx_serial,
+    input  wire  rx_serial,
     output logic tx_serial,
 
     // Write address
     output logic                    m_axi_awvalid,
-    input  logic                    m_axi_awready,
+    input  wire                     m_axi_awready,
     output logic [  ADDR_WIDTH-1:0] m_axi_awaddr,
     output logic [             2:0] m_axi_awprot,
     // Write data
     output logic                    m_axi_wvalid,
-    input  logic                    m_axi_wready,
+    input  wire                     m_axi_wready,
     output logic [  DATA_WIDTH-1:0] m_axi_wdata,
     output logic [DATA_WIDTH/8-1:0] m_axi_wstrb,
     // Write response
-    input  logic                    m_axi_bvalid,
+    input  wire                     m_axi_bvalid,
     output logic                    m_axi_bready,
     // Read address
     output logic                    m_axi_arvalid,
-    input  logic                    m_axi_arready,
+    input  wire                     m_axi_arready,
     output logic [  ADDR_WIDTH-1:0] m_axi_araddr,
     output logic [             2:0] m_axi_arprot,
     // Read data
-    input  logic                    m_axi_rvalid,
+    input  wire                     m_axi_rvalid,
     output logic                    m_axi_rready,
-    input  logic [  DATA_WIDTH-1:0] m_axi_rdata
+    input  wire  [  DATA_WIDTH-1:0] m_axi_rdata
 );
 
   localparam int NumBytes = DATA_WIDTH / 8;

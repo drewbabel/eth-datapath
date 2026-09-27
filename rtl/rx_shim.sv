@@ -8,16 +8,16 @@ module rx_shim #(
     parameter int BUF_DEPTH = 2048,
     parameter int VERDICT_DEPTH = 16
 ) (
-    input logic clk,
-    input logic rst_n,
+    input wire  clk,
+    input wire  rst_n,
     // Controller receive
-    input logic       rx_axis_tvalid,
-    input logic [7:0] rx_axis_tdata,
-    input logic       rx_axis_tlast,
-    input logic       rx_axis_tuser,
+    input wire        rx_axis_tvalid,
+    input wire  [7:0] rx_axis_tdata,
+    input wire        rx_axis_tlast,
+    input wire        rx_axis_tuser,
     // Switch slave
     output logic              m_tvalid,
-    input  logic              m_tready,
+    input  wire               m_tready,
     output logic [       8:0] m_tdata,
     output logic              m_tlast,
     output logic [DEST_W-1:0] m_tdest,

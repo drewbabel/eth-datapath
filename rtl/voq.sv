@@ -8,20 +8,20 @@ module voq #(
     parameter int MAX_FRAME = 1518,
     parameter int QW        = WIDTH + 1
 ) (
-    input  logic                         clk,
-    input  logic                         rst_n,
+    input  wire                          clk,
+    input  wire                          rst_n,
     // Slave
-    input  logic                         s_tvalid,
+    input  wire                          s_tvalid,
     output logic                         s_tready,
-    input  logic [ WIDTH-1:0]            s_tdata,
-    input  logic                         s_tlast,
-    input  logic [DEST_W-1:0]            s_tdest,
+    input  wire  [ WIDTH-1:0]            s_tdata,
+    input  wire                          s_tlast,
+    input  wire  [DEST_W-1:0]            s_tdest,
     // Shared exit
     output logic [ N_OUT-1:0]            navail,
-    input  logic [DEST_W-1:0]            sel,
-    input  logic                         sel_valid,
+    input  wire  [DEST_W-1:0]            sel,
+    input  wire                          sel_valid,
     output logic                         m_tvalid,
-    input  logic                         m_tready,
+    input  wire                          m_tready,
     output logic [ WIDTH-1:0]            m_tdata,
 `ifdef FORMAL
     output logic [DEST_W-1:0]            f_out_sel,

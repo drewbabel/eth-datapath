@@ -5,34 +5,34 @@ module axil_csr #(
     parameter int DATA_WIDTH = 32,
     localparam int NumStatus = 2 ** (ADDR_WIDTH - $clog2(DATA_WIDTH / 8) - 1)
 ) (
-    input  logic                    clk,
-    input  logic                    rst_n,
+    input  wire                     clk,
+    input  wire                     rst_n,
     // Write address
-    input  logic                    s_axi_awvalid,
+    input  wire                     s_axi_awvalid,
     output logic                    s_axi_awready = 1'b0,
-    input  logic [  ADDR_WIDTH-1:0] s_axi_awaddr,
-    input  logic [             2:0] s_axi_awprot,          // Permission bit
+    input  wire  [  ADDR_WIDTH-1:0] s_axi_awaddr,
+    input  wire  [             2:0] s_axi_awprot,          // Permission bit
     // Write data
-    input  logic                    s_axi_wvalid,
+    input  wire                     s_axi_wvalid,
     output logic                    s_axi_wready = 1'b0,
-    input  logic [  DATA_WIDTH-1:0] s_axi_wdata,
-    input  logic [DATA_WIDTH/8-1:0] s_axi_wstrb,
+    input  wire  [  DATA_WIDTH-1:0] s_axi_wdata,
+    input  wire  [DATA_WIDTH/8-1:0] s_axi_wstrb,
     // Write response
     output logic                    s_axi_bvalid = 1'b0,
-    input  logic                    s_axi_bready,
+    input  wire                     s_axi_bready,
     output logic [             1:0] s_axi_bresp,
     // Read address
-    input  logic                    s_axi_arvalid,
+    input  wire                     s_axi_arvalid,
     output logic                    s_axi_arready = 1'b0,
-    input  logic [  ADDR_WIDTH-1:0] s_axi_araddr,
-    input  logic [             2:0] s_axi_arprot,          // Permission bit
+    input  wire  [  ADDR_WIDTH-1:0] s_axi_araddr,
+    input  wire  [             2:0] s_axi_arprot,          // Permission bit
     // Read data
     output logic                    s_axi_rvalid = 1'b0,
-    input  logic                    s_axi_rready,
+    input  wire                     s_axi_rready,
     output logic [  DATA_WIDTH-1:0] s_axi_rdata,
     output logic [             1:0] s_axi_rresp,
     // Upper half reads
-    input  logic [   NumStatus-1:0][DATA_WIDTH-1:0] status,
+    input  wire  [   NumStatus-1:0][DATA_WIDTH-1:0] status,
     // Lower half taps
     output logic [   NumStatus-1:0][DATA_WIDTH-1:0] control
 );
