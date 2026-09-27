@@ -4,11 +4,11 @@ module credit_link #(
     parameter int WIDTH = 8,
     parameter int DEPTH = 16
 ) (
-    input  logic             clk,
-    input  logic             rst_n,
-    input  logic             src_valid,
-    input  logic [WIDTH-1:0] src_data,
-    input  logic             dst_ready,
+    input  wire              clk,
+    input  wire              rst_n,
+    input  wire              src_valid,
+    input  wire  [WIDTH-1:0] src_data,
+    input  wire              dst_ready,
     output logic             src_ready,
     output logic             dst_valid,
     output logic [WIDTH-1:0] dst_data
