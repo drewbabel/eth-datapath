@@ -11,6 +11,7 @@ module rr_arbiter_tb ();
   logic rst_n = 1'b1;
   logic [N-1:0] req = '0;
   logic hold = 1'b0;
+  logic won = 1'b1;
   logic [N-1:0] grant;
   logic grant_valid;
 
@@ -28,6 +29,7 @@ module rr_arbiter_tb ();
       .rst_n(rst_n),
       .req(req),
       .hold(hold),
+      .won(won),
       .grant(grant),
       .grant_valid(grant_valid)
   );

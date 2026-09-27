@@ -1,0 +1,30 @@
+[tasks]
+prove
+cover
+
+[options]
+prove: mode prove
+cover: mode cover
+cover: depth 30
+
+[engines]
+prove: smtbmc z3
+prove: abc pdr
+cover: smtbmc z3
+
+[script]
+read -sv rr_arbiter.sv
+read -sv axis_skid.sv
+read -sv sync_fifo.sv
+read -formal voq.sv
+read -formal axis_switch.sv
+read -formal sw_seam.sv
+prep -top sw_seam
+
+[files]
+rtl/rr_arbiter.sv
+rtl/axis_skid.sv
+rtl/sync_fifo.sv
+rtl/voq.sv
+rtl/axis_switch.sv
+formal/sw_seam.sv
