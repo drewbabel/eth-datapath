@@ -3,11 +3,11 @@
 module rr_arbiter #(
     parameter int N = 4
 ) (
-    input  logic         clk,
-    input  logic         rst_n,
-    input  logic [N-1:0] req,         // Request
-    input  logic         hold,
-    input  logic         won,
+    input  wire          clk,
+    input  wire          rst_n,
+    input  wire  [N-1:0] req,         // Request
+    input  wire          hold,
+    input  wire          won,
     output logic [N-1:0] grant,
     output logic         grant_valid
 );

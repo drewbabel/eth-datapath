@@ -6,19 +6,19 @@ module axis_switch #(
     parameter int N_OUT = 2,
     parameter int SEL_W = $clog2(N_OUT)
 ) (
-    input  logic                         clk,
-    input  logic                         rst_n,
+    input  wire                          clk,
+    input  wire                          rst_n,
     // Slave
-    input  logic [ N_IN-1:0]             s_tvalid,
+    input  wire  [ N_IN-1:0]             s_tvalid,
     output logic [ N_IN-1:0]             s_tready,
-    input  logic [ N_IN-1:0][WIDTH-1:0]  s_tdata,
-    input  logic [ N_IN-1:0]             s_tlast,
-    input  logic [ N_IN-1:0][N_OUT-1:0]  s_navail,
+    input  wire  [ N_IN-1:0][WIDTH-1:0]  s_tdata,
+    input  wire  [ N_IN-1:0]             s_tlast,
+    input  wire  [ N_IN-1:0][N_OUT-1:0]  s_navail,
     output logic [ N_IN-1:0][SEL_W-1:0]  s_sel,
     output logic [ N_IN-1:0]             s_sel_valid,
     // Master
     output logic [N_OUT-1:0]             m_tvalid,
-    input  logic [N_OUT-1:0]             m_tready,
+    input  wire  [N_OUT-1:0]             m_tready,
     output logic [N_OUT-1:0][WIDTH-1:0]  m_tdata,
 `ifdef FORMAL
     output logic [ N_IN-1:0]             f_in_busy,

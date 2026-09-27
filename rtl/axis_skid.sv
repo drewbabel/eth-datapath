@@ -3,16 +3,16 @@
 module axis_skid #(
     parameter int WIDTH = 8
 ) (
-    input  logic             clk,
-    input  logic             rst_n,
+    input  wire              clk,
+    input  wire              rst_n,
     // Slave
-    input  logic             s_tvalid,
+    input  wire              s_tvalid,
     output logic             s_tready,
-    input  logic [WIDTH-1:0] s_tdata,
-    input  logic             s_tlast,
+    input  wire  [WIDTH-1:0] s_tdata,
+    input  wire              s_tlast,
     // Master
     output logic             m_tvalid,
-    input  logic             m_tready,
+    input  wire              m_tready,
     output logic [WIDTH-1:0] m_tdata,
     output logic             m_tlast
 );

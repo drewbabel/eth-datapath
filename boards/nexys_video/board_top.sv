@@ -1,21 +1,21 @@
 `default_nettype none
 
 module board_top (
-    input  logic       clk,
-    input  logic       reset_n,
+    input  wire        clk,
+    input  wire        reset_n,
     output logic [7:0] led,
 
     // RGMII pins
-    input  logic       phy_rx_clk,
-    input  logic [3:0] phy_rxd,
-    input  logic       phy_rx_ctl,
+    input  wire        phy_rx_clk,
+    input  wire  [3:0] phy_rxd,
+    input  wire        phy_rx_ctl,
     output logic       phy_tx_clk,
     output logic [3:0] phy_txd,
     output logic       phy_tx_ctl,
     output logic       phy_reset_n,
 
     // Serial pins
-    input  logic uart_rxd,
+    input  wire  uart_rxd,
     output logic uart_txd
 );
 

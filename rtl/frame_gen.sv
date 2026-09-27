@@ -5,14 +5,14 @@ module frame_gen #(
     parameter logic [47:0] SRC_MAC  = 48'h02_00_00_00_00_01,
     parameter logic [15:0] ETHERTYPE = 16'h88B5
 ) (
-    input logic clk,
-    input logic rst_n,
+    input wire  clk,
+    input wire  rst_n,
 
     // Host commands
-    input logic        start,
-    input logic [10:0] frame_bytes,
-    input logic [31:0] frame_count,
-    input logic [ 7:0] gap_bytes,
+    input wire         start,
+    input wire  [10:0] frame_bytes,
+    input wire  [31:0] frame_count,
+    input wire  [ 7:0] gap_bytes,
 
     // Stream out
     output logic [7:0] m_tdata,

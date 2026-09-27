@@ -5,11 +5,11 @@ module sync_fifo #(
     parameter int DEPTH = 16
 ) (
     output logic [$clog2(DEPTH+1)-1:0] count,
-    input logic clk,
-    input logic rst_n,
-    input logic wr_en,
-    input logic rd_en,
-    input logic [WIDTH-1:0] wr_data,
+    input wire clk,
+    input wire rst_n,
+    input wire wr_en,
+    input wire rd_en,
+    input wire [WIDTH-1:0] wr_data,
     output logic [WIDTH-1:0] rd_data,
     output logic full,
     output logic empty

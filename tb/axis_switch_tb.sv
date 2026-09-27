@@ -9,9 +9,9 @@ module axis_switch_harness #(
     parameter int QDEPTH  = 256,
     parameter int FLOOR   = 700
 ) (
-    input  logic clk,
-    input  logic rst_n,
-    input  logic stall_en,
+    input  wire  clk,
+    input  wire  rst_n,
+    input  wire  stall_en,
     output int   checks,
     output int   errors,
     output logic done

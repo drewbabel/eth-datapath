@@ -7,13 +7,13 @@ module sw_seam #(
     parameter int DEPTH     = 8,
     parameter int MAX_FRAME = 4
 ) (
-    input  logic                          clk,
-    input  logic                          rst_n,
-    input  logic [NPORT-1:0]              s_tvalid,
-    input  logic [NPORT-1:0][WIDTH-1:0]   s_tdata,
-    input  logic [NPORT-1:0]              s_tlast,
-    input  logic [NPORT-1:0][DEST_W-1:0]  s_tdest,
-    input  logic [NPORT-1:0]              m_tready,
+    input  wire                           clk,
+    input  wire                           rst_n,
+    input  wire  [NPORT-1:0]              s_tvalid,
+    input  wire  [NPORT-1:0][WIDTH-1:0]   s_tdata,
+    input  wire  [NPORT-1:0]              s_tlast,
+    input  wire  [NPORT-1:0][DEST_W-1:0]  s_tdest,
+    input  wire  [NPORT-1:0]              m_tready,
     output logic [NPORT-1:0]              m_tvalid,
     output logic [NPORT-1:0][WIDTH-1:0]   m_tdata,
     output logic [NPORT-1:0]              m_tlast

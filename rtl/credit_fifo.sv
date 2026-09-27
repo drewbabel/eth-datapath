@@ -7,11 +7,11 @@ module credit_fifo #(
 `ifdef FORMAL
     output logic [$clog2(DEPTH+1):0] f_occupancy,
 `endif
-    input  logic             clk,
-    input  logic             rst_n,
-    input  logic             rx_valid,
-    input  logic [WIDTH-1:0] rx_data,
-    input  logic             dst_ready,
+    input  wire              clk,
+    input  wire              rst_n,
+    input  wire              rx_valid,
+    input  wire  [WIDTH-1:0] rx_data,
+    input  wire              dst_ready,
     output logic             dst_valid,
     output logic [WIDTH-1:0] dst_data,
     output logic             credit_return
