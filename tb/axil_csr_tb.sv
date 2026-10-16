@@ -4,6 +4,7 @@ module axil_csr_tb ();
 
   int checks = 0;
   int errors = 0;
+  int max_errors = 0;
 
   localparam int AddrWidth = 4;
   localparam int DataWidth = 32;
@@ -252,6 +253,14 @@ module axil_csr_tb ();
   // Watchdog
   initial begin
     #200_000_000 $fatal(1, "TIMEOUT: sim exceeded max time");
+  end
+
+  // Mismatch limit
+  initial begin
+    if ($value$plusargs("max_errors=%d", max_errors) && max_errors != 0) begin
+      wait (errors >= max_errors);
+      $fatal(1, "TB STOPPED: %0d mismatches", errors);
+    end
   end
 
   // Payload stability

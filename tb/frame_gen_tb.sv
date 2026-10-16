@@ -19,6 +19,7 @@ module frame_gen_tb;
 
   int pass_count = 0;
   int fail_count = 0;
+  int max_errors = 0;
 
   int    beat_count = 0;
   int    frame_len[$];
@@ -60,6 +61,8 @@ module frame_gen_tb;
     end else begin
       fail_count = fail_count + 1;
       $display("FAIL %s got=%0d exp=%0d", name, got, want);
+      if (max_errors != 0 && fail_count >= max_errors)
+        $fatal(1, "TB STOPPED: %0d mismatches", fail_count);
     end
   endtask  // Automatic
 
@@ -182,6 +185,7 @@ module frame_gen_tb;
   endtask  // Automatic
 
   initial begin
+    void'($value$plusargs("max_errors=%d", max_errors));
     $dumpfile("frame_gen_tb.vcd");
     $dumpvars(0, frame_gen_tb);
 

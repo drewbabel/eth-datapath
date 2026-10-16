@@ -4,6 +4,7 @@ module uart_axil_tb ();
 
   int checks = 0;
   int errors = 0;
+  int max_errors = 0;
 
   localparam int ClkFreqHz = 18_432_000;
   localparam int BaudRate = 115_200;
@@ -254,6 +255,14 @@ module uart_axil_tb ();
   // Watchdog
   initial begin
     #500_000_000 $fatal(1, "TIMEOUT: sim exceeded max time");
+  end
+
+  // Mismatch limit
+  initial begin
+    if ($value$plusargs("max_errors=%d", max_errors) && max_errors != 0) begin
+      wait (errors >= max_errors);
+      $fatal(1, "TB STOPPED: %0d mismatches", errors);
+    end
   end
 
 endmodule
