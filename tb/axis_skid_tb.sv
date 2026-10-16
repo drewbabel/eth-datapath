@@ -4,6 +4,7 @@ module axis_skid_tb ();
 
   int checks = 0;
   int errors = 0;
+  int max_errors = 0;
 
   localparam int Width = 8;
   localparam int PktLen = 4;
@@ -184,6 +185,14 @@ module axis_skid_tb ();
   // Watchdog
   initial begin
     #200_000_000 $fatal(1, "TIMEOUT: sim exceeded max time");
+  end
+
+  // Mismatch limit
+  initial begin
+    if ($value$plusargs("max_errors=%d", max_errors) && max_errors != 0) begin
+      wait (errors >= max_errors);
+      $fatal(1, "TB STOPPED: %0d mismatches", errors);
+    end
   end
 
   // Reference model

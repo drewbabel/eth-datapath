@@ -268,6 +268,7 @@ module axis_switch_tb ();
   int   checks1;
   int   errors1;
   logic done1;
+  int   max_errors = 0;
 
   always #5 clk = ~clk;
 
@@ -336,6 +337,14 @@ module axis_switch_tb ();
       $fatal(1);
     end
     $finish;
+  end
+
+  // Mismatch limit
+  initial begin
+    if ($value$plusargs("max_errors=%d", max_errors) && max_errors != 0) begin
+      wait (errors2 + errors4 + errors1 >= max_errors);
+      $fatal(1, "TB STOPPED: %0d mismatches", errors2 + errors4 + errors1);
+    end
   end
 
 endmodule
