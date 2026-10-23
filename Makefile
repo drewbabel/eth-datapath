@@ -1,4 +1,5 @@
 #   make MOD=rr_arbiter           		    compile rtl/ + that tb, run (test FAIL exits nonzero)
+#   make MOD=rr_arbiter MAX_ERRORS=3		same, but stop the tb after 3 mismatches
 #   make wave MOD=rr_arbiter        		same, then open the waveform in surfer (opens even on FAIL)
 #   make view MOD=rr_arbiter         		open testbench waveform in surfer (error if .vcd missing)
 #   make formal MOD=rr_arbiter  		    run every SymbiYosys task in formal/$(MOD).sby (FAIL exits nonzero)
@@ -22,13 +23,13 @@ run:
 	@test -n "$(MOD)" || { echo "usage: make MOD=<module>  (e.g. MOD=rr_arbiter)"; exit 1; }
 	@mkdir -p build
 	iverilog -g2012 $(LIB) -s $(MOD)_tb -o $(SIM) $(RTL) $(TB)
-	vvp $(SIM)
+	vvp $(SIM) $(if $(MAX_ERRORS),+max_errors=$(MAX_ERRORS))
 
 wave:
 	@test -n "$(MOD)" || { echo "usage: make wave MOD=<module>"; exit 1; }
 	@mkdir -p build
 	iverilog -g2012 $(LIB) -s $(MOD)_tb -o $(SIM) $(RTL) $(TB)
-	-vvp $(SIM)
+	-vvp $(SIM) $(if $(MAX_ERRORS),+max_errors=$(MAX_ERRORS))
 	surfer $$(ls *.vcd 2>/dev/null | head -1) $$(test -f $(WAVE_STATE) && echo "-s $(WAVE_STATE)") &
 
 view:

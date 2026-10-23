@@ -4,6 +4,7 @@ module tx_shim_tb ();
 
   int checks = 0;
   int errors = 0;
+  int max_errors = 0;
 
   logic clk = 1'b0;
 
@@ -135,6 +136,14 @@ module tx_shim_tb ();
       $fatal(1);
     end
     $finish;
+  end
+
+  // Mismatch limit
+  initial begin
+    if ($value$plusargs("max_errors=%d", max_errors) && max_errors != 0) begin
+      wait (errors >= max_errors);
+      $fatal(1, "TB STOPPED: %0d mismatches", errors);
+    end
   end
 
 endmodule
